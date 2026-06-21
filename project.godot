@@ -1,0 +1,28 @@
+; Engine configuration file.
+; ReadySetGrow — Godot 4.7 (.NET / C#)
+
+config_version=5
+
+[application]
+
+config/name="ReadySetGrow"
+config/description="A 3D grow-a-garden game. Plant seeds on open dirt, grow them in real time, harvest and sell for coins, chase rare mutations, and unlock the Magical Tree, Hidden Grove, and Pets."
+run/main_scene="res://ReadySetGrow.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+config/icon="res://icon.svg"
+
+[dotnet]
+
+project/assembly_name="GrowDaGarden"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+environment/defaults/default_clear_color=Color(0.32, 0.55, 0.32, 1)

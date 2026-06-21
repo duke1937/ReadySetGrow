@@ -1,0 +1,10 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <RootNamespace>GrowDaGarden</RootNamespace>
+    <!-- We only have .NET 9/10 runtimes installed; roll a net8 build forward to them. -->
+    <RollForward>LatestMajor</RollForward>
+  </PropertyGroup>
+</Project>

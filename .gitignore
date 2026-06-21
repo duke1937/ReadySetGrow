@@ -1,0 +1,18 @@
+# Godot 4 .NET
+.godot/
+.import/
+export.cfg
+
+# .NET / C#
+.mono/
+data_*/
+bin/
+obj/
+*.user
+
+# Build output (the standalone exe is published as a GitHub Release, not committed)
+build/
+
+# OS
+Thumbs.db
+.DS_Store
