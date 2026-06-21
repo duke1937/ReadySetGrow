@@ -68,6 +68,9 @@ public partial class Game3D : Node3D
     private Vector3 _vineTop;
     private Vector3 _vineBase;
 
+    // --- mystery pack (gacha for the 3 best fruits) ---
+    private readonly HashSet<int> _packWon = new();   // global seed indices won from the pack
+
     // --- pets (shop unlocks at 100 Qa) ---
     private bool _petsUnlocked;
     private readonly HashSet<string> _ownedPets = new();
@@ -154,28 +157,29 @@ public partial class Game3D : Node3D
         _activeSeeds.AddRange(Catalog.TreeSeeds);
         _activeSeeds.AddRange(Catalog.GroveSeeds);
         _activeSeeds.AddRange(Catalog.UniSeeds);
+        _activeSeeds.AddRange(Catalog.PackSeeds);
     }
 
     private static int BaseCount => Catalog.Seeds.Count;
-    private static int TreeEnd => Catalog.Seeds.Count + Catalog.TreeSeeds.Count;
+    private static int TreeEnd => BaseCount + Catalog.TreeSeeds.Count;
     private static int GroveEnd => TreeEnd + Catalog.GroveSeeds.Count;
+    private static int UniEnd => GroveEnd + Catalog.UniSeeds.Count;
 
     private bool IndexUnlocked(int i)
     {
         if (i < BaseCount) return true;
         if (i < TreeEnd) return _treeUnlocked;
         if (i < GroveEnd) return _groveUnlocked;
-        return _uniUnlocked;
+        if (i < UniEnd) return _uniUnlocked;
+        return _packWon.Contains(i);   // Mystery Pack fruits
     }
-
-    // -1 means "not a coin unlock" (the Uni-Grape is reached by climbing).
-    private static double UnlockCostForIndex(int i) =>
-        i < BaseCount ? 0 : i < TreeEnd ? Catalog.TreeUnlockCost : i < GroveEnd ? Catalog.GroveUnlockCost : -1;
 
     private static string LockMessage(int i)
     {
-        double c = UnlockCostForIndex(i);
-        return c < 0 ? "climb the Uni-Grape vine 🍇" : $"reach {Num.Fmt(c)} 🪙";
+        if (i >= UniEnd) return "win it from the 🎁 Mystery Pack";
+        if (i >= GroveEnd) return "climb the Uni-Grape vine 🍇";
+        if (i >= TreeEnd) return $"reach {Num.Fmt(Catalog.GroveUnlockCost)} 🪙";
+        return $"reach {Num.Fmt(Catalog.TreeUnlockCost)} 🪙";
     }
 
     // ---- multi-tile (footprint) helpers -----------------------------------
@@ -190,25 +194,38 @@ public partial class Game3D : Node3D
     private static int PlotIndex(int field, int col, int row) =>
         field * Catalog.PlotsPerField + row * Catalog.FieldCols + col;
 
-    /// <summary>The 4 spot indices of a 2x2 block containing the clicked spot (master first).</summary>
-    private static int[] MultiBlock(int idx)
+    /// <summary>The spot indices a multi-tile plant covers (master first): a 1x2 pair
+    /// for footprint 2, a 2x2 block for footprint 4, anchored to fit the field.</summary>
+    private static int[] MultiBlock(int idx, int footprint)
     {
         var (field, col, row) = PlotCoords(idx);
         int mcol = Mathf.Min(col, Catalog.FieldCols - 2);
-        int mrow = Mathf.Min(row, Catalog.FieldRows - 2);
-        return new[]
+        if (footprint >= 4)
         {
-            PlotIndex(field, mcol, mrow),
-            PlotIndex(field, mcol + 1, mrow),
-            PlotIndex(field, mcol, mrow + 1),
-            PlotIndex(field, mcol + 1, mrow + 1),
-        };
+            int mrow = Mathf.Min(row, Catalog.FieldRows - 2);
+            return new[]
+            {
+                PlotIndex(field, mcol, mrow),
+                PlotIndex(field, mcol + 1, mrow),
+                PlotIndex(field, mcol, mrow + 1),
+                PlotIndex(field, mcol + 1, mrow + 1),
+            };
+        }
+        return new[] { PlotIndex(field, mcol, row), PlotIndex(field, mcol + 1, row) };  // 1x2 pair
     }
 
-    private void SetupMulti(int masterIdx)
+    private void SetupMulti(int masterIdx, int footprint)
     {
-        _plots[masterIdx].PlantOffset = new Vector3(SpotSpacing * 0.5f, 0, SpotSpacing * 0.5f);
-        _plots[masterIdx].ExtraScale = 1.9f;
+        if (footprint >= 4)
+        {
+            _plots[masterIdx].PlantOffset = new Vector3(SpotSpacing * 0.5f, 0, SpotSpacing * 0.5f);
+            _plots[masterIdx].ExtraScale = 1.9f;
+        }
+        else
+        {
+            _plots[masterIdx].PlantOffset = new Vector3(SpotSpacing * 0.5f, 0, 0);
+            _plots[masterIdx].ExtraScale = 1.4f;
+        }
     }
 
     /// <summary>Clear a plant and any multi-tile slaves it covers.</summary>
@@ -515,13 +532,16 @@ public partial class Game3D : Node3D
             case "barrier":
                 SetPrompt($"🔮 Vine barrier — reach {Num.Fmt(VineBarrierCost)} 🪙 to enter (you have {Num.Fmt(_coins)})", new Color("9fd8ff"));
                 return;
+            case "pack":
+                SetPrompt($"🎁 [E] Spin the Mystery Pack — win a top fruit ({Num.Fmt(Catalog.PackCost)} 🪙)", new Color("ffd0ff"));
+                return;
             case "plot" when _targeted is not null:
             {
                 PlotState st = _targeted.State;
                 if (st.IsReady)
                 {
-                    string mut = st.Mutation.IsNormal ? "" : st.Mutation.Name + " ";
-                    SetPrompt($"[E] Harvest {mut}{Plot3D.SizeWord(st.Size)}{st.Seed!.Name}   +{Num.Fmt(st.Payout)} 🪙", new Color("9be67a"));
+                    string mut = st.IsMutated ? st.MutationSummary() + "  " : "";
+                    SetPrompt($"[E] Harvest {mut}{Plot3D.SizeWord(st.Size)}{st.Seed!.Name}   +{Num.Fmt(st.Payout * _yieldMult)} 🪙", new Color("9be67a"));
                 }
                 else if (st.IsEmpty)
                 {
@@ -559,6 +579,7 @@ public partial class Game3D : Node3D
             case "pets": UsePetsShop(); break;
             case "unigrape": UseUni(); break;
             case "barrier": UseBarrier(); break;
+            case "pack": OpenPack(); break;
             case "plot" when _targeted is not null: UsePlot(_targeted); break;
         }
     }
@@ -658,6 +679,51 @@ public partial class Game3D : Node3D
             ShowToast("🍇 Uni-Grape seeds are in the shop — hold Shift to browse.", new Color("d8b8ff"));
     }
 
+    // ---- mystery pack -----------------------------------------------------
+
+    private void OpenPack()
+    {
+        if (_quizOpen)
+            return;
+        if (_coins < Catalog.PackCost)
+        {
+            _sfx.Play("error");
+            ShowToast($"Need {Num.Fmt(Catalog.PackCost)} 🪙 to open the Mystery Pack", new Color("ff8a7a"));
+            return;
+        }
+
+        _coins -= Catalog.PackCost;
+        _sfx.Play("select");
+
+        bool wasWalking = _walkMode;
+        Input.MouseMode = Input.MouseModeEnum.Visible;
+        _crosshair.Visible = false;
+        _quizOpen = true;   // pause + free cursor while the spinner runs
+
+        var pack = Catalog.PackSeeds;
+        var names = new string[pack.Count];
+        var colors = new Color[pack.Count];
+        for (int i = 0; i < pack.Count; i++) { names[i] = pack[i].Name; colors[i] = pack[i].Color; }
+
+        var spin = new PackSpin
+        {
+            Names = names,
+            Colors = colors,
+            OnDone = w => { _quizOpen = false; WinPack(w); SetWalkMode(wasWalking); },
+        };
+        _uiRoot.AddChild(spin);
+    }
+
+    private void WinPack(int packLocalIndex)
+    {
+        int global = UniEnd + packLocalIndex;
+        _packWon.Add(global);
+        _selected = global;
+        PopulateShop();
+        _sfx.Play("unlock", -3f);
+        ShowToast($"🎁 You won {Catalog.PackSeeds[packLocalIndex].Name}! Go plant it!", new Color("ffd0ff"));
+    }
+
     private void UnlockUni()
     {
         if (_uniUnlocked) return;
@@ -755,8 +821,8 @@ public partial class Game3D : Node3D
         {
             double payout = st.Payout * _yieldMult;
             AddToBasket(payout);
-            string mut = st.Mutation.IsNormal ? "" : st.Mutation.Name + " ";
-            _sfx.Play(st.Mutation.IsNormal ? "harvest" : "harvestMut");
+            string mut = st.IsMutated ? $"✨{st.Mutations.Count}× " : "";
+            _sfx.Play(st.IsMutated ? "harvestMut" : "harvest");
             ShowToast($"Harvested {mut}{st.Seed!.Name} → basket  (+{Num.Fmt(payout)})", new Color("9be67a"));
             ClearPlot(plot.Index);
             return;
@@ -771,7 +837,7 @@ public partial class Game3D : Node3D
                 ShowToast($"🔒 {seed.Name} is locked — {LockMessage(_selected)}", new Color("ff8a7a"));
                 return;
             }
-            if (seed.Footprint >= 4)
+            if (seed.Footprint >= 2)
             {
                 PlantMulti(plot.Index, seed);
                 return;
@@ -797,13 +863,14 @@ public partial class Game3D : Node3D
 
     private void PlantMulti(int clickedIdx, SeedType seed)
     {
-        int[] block = MultiBlock(clickedIdx);
+        int[] block = MultiBlock(clickedIdx, seed.Footprint);
+        string need = seed.Footprint >= 4 ? "a clear 2×2 patch" : "2 clear spaces side by side";
         foreach (int bi in block)
         {
             if (!_states[bi].IsEmpty || _states[bi].SlaveOf >= 0)
             {
                 _sfx.Play("error");
-                ShowToast($"{seed.Name} needs a clear 2×2 patch of dirt", new Color("ff8a7a"));
+                ShowToast($"{seed.Name} needs {need} of dirt", new Color("ff8a7a"));
                 return;
             }
         }
@@ -819,11 +886,11 @@ public partial class Game3D : Node3D
         _states[master].Plant(seed, RollSize());
         for (int k = 1; k < block.Length; k++)
             _states[block[k]].SlaveOf = master;
-        SetupMulti(master);
+        SetupMulti(master, seed.Footprint);
         foreach (int bi in block)
             _plots[bi].Refresh(0f);
         _sfx.Play("plant");
-        ShowToast($"Planted {seed.Name} (4 spaces)  -{Num.Fmt(seed.Cost)} 🪙", new Color("d9f7a6"));
+        ShowToast($"Planted {seed.Name} ({block.Length} spaces)  -{Num.Fmt(seed.Cost)} 🪙", new Color("d9f7a6"));
     }
 
     private void AddToBasket(double payout)
@@ -1068,8 +1135,45 @@ public partial class Game3D : Node3D
         BuildHiddenGrove();
         BuildPetsShop();
         BuildVine();
+        BuildPackStall();
         BuildWeather();
         BuildPlayer();
+    }
+
+    /// <summary>A gift box just outside the gate — interact to spin the Mystery Pack.</summary>
+    private void BuildPackStall()
+    {
+        var pos = new Vector3(2.8f, 0, GateZ + 4.2f);
+
+        AddChild(new MeshInstance3D
+        {
+            Mesh = new BoxMesh { Size = new Vector3(1.1f, 1.1f, 1.1f) },
+            Position = pos + new Vector3(0, 0.55f, 0),
+            MaterialOverride = Mat(new Color("d14db0"), 0.6f),
+        });
+        // ribbon (two crossing bands) + bow
+        var ribbon = Mat(new Color("ffe066"), 0.5f);
+        AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(1.16f, 1.16f, 0.18f) }, Position = pos + new Vector3(0, 0.55f, 0), MaterialOverride = ribbon });
+        AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(0.18f, 1.16f, 1.16f) }, Position = pos + new Vector3(0, 0.55f, 0), MaterialOverride = ribbon });
+        AddChild(new MeshInstance3D { Mesh = new SphereMesh { Radius = 0.16f, Height = 0.32f }, Position = pos + new Vector3(0, 1.18f, 0), MaterialOverride = ribbon });
+
+        AddChild(new Label3D
+        {
+            Text = "🎁 Mystery Pack",
+            Position = pos + new Vector3(0, 1.7f, 0),
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FontSize = 72, PixelSize = 0.006f, OutlineSize = 18,
+            Modulate = new Color("ffd0ff"), OutlineModulate = new Color(0, 0, 0, 0.85f),
+        });
+
+        var solid = new StaticBody3D { CollisionLayer = 1, CollisionMask = 0 };
+        solid.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(1.1f, 1.1f, 1.1f) }, Position = pos + new Vector3(0, 0.55f, 0) });
+        AddChild(solid);
+
+        var look = new StaticBody3D { CollisionLayer = 2, CollisionMask = 0 };
+        look.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(1.5f, 1.6f, 1.5f) }, Position = pos + new Vector3(0, 0.8f, 0) });
+        look.SetMeta("kind", "pack");
+        AddChild(look);
     }
 
     /// <summary>A grape vine of 15 giant leaf platforms spiralling up to the Uni-Grape.</summary>
@@ -1725,16 +1829,30 @@ public partial class Game3D : Node3D
         return 0.7f + 0.85f * r; // ~0.70 .. 1.55
     }
 
+    private const float MutInterval = 2.0f;   // how often a ripe crop rolls for an extra mutation
+
     private static void Grow(PlotState st, float dt, string? evt = null)
     {
-        if (st.Seed is null || st.IsReady)
+        if (st.Seed is null)
             return;
 
-        st.Growth += dt;
-        if (st.IsReady && !st.MutationRolled)
+        if (!st.IsReady)
         {
-            st.Mutation = Mutation.Roll(evt, st.Seed.Rarity);
-            st.MutationRolled = true;
+            st.Growth += dt;
+            if (st.IsReady && !st.MutationRolled)
+            {
+                st.MutationRolled = true;
+                st.AddMutation(Mutation.Roll(evt, st.Seed.Rarity));
+            }
+            return;
+        }
+
+        // Fully grown: keep rolling — mutations can still appear and stack with no limit.
+        st.MutTimer += dt;
+        if (st.MutTimer >= MutInterval)
+        {
+            st.MutTimer = 0f;
+            st.AddMutation(Mutation.Roll(evt, st.Seed.Rarity));
         }
     }
 
@@ -1875,6 +1993,7 @@ public partial class Game3D : Node3D
         _vineBarrierDown = false;
         if (_vineBarrier is null) BuildVineBarrier(_vineBase);
         _ownedPets.Clear();
+        _packWon.Clear();
         RecomputePetBonuses();
         _selected = 0;
         _auto = false;
@@ -1952,8 +2071,8 @@ public partial class Game3D : Node3D
                 st.Growth = st.Seed!.GrowSeconds;
                 if (!st.MutationRolled)
                 {
-                    st.Mutation = Mutation.Roll(_activeEvent, st.Seed.Rarity);
                     st.MutationRolled = true;
+                    st.AddMutation(Mutation.Roll(_activeEvent, st.Seed.Rarity));
                 }
                 grew++;
             }
@@ -2167,6 +2286,7 @@ public partial class Game3D : Node3D
             if (i == BaseCount) { AddShopDivider("✨  MAGICAL TREE  ✨", "e0b8ff"); lastRarity = ""; }
             else if (i == TreeEnd) { AddShopDivider("🌌  HIDDEN GROVE  🌌", "aef0e0"); lastRarity = ""; }
             else if (i == GroveEnd) { AddShopDivider("🍇  UNI-GRAPE  🍇", "c89aff"); lastRarity = ""; }
+            else if (i == UniEnd) { AddShopDivider("🎁  MYSTERY PACK  🎁", "ffd0ff"); lastRarity = ""; }
 
             if (seed.Rarity != lastRarity)
             {
@@ -2258,7 +2378,7 @@ public partial class Game3D : Node3D
             else
             {
                 string costCol = afford ? "ffe066" : "ff8a7a";
-                string foot = row.Seed.Footprint >= 4 ? "  ·  4 spaces" : "";
+                string foot = row.Seed.Footprint >= 4 ? "  ·  4 spaces" : row.Seed.Footprint == 2 ? "  ·  2 spaces" : "";
                 row.Info.Text =
                     $"[b]{row.Seed.Name}[/b]  [color=#{rc}]{row.Seed.Rarity}[/color]\n" +
                     $"[color=#{costCol}]{Num.Fmt(row.Seed.Cost)}🪙[/color]  " +
@@ -2468,11 +2588,14 @@ public partial class Game3D : Node3D
         var plots = new Godot.Collections.Array();
         foreach (PlotState s in _states)
         {
+            var muts = new Godot.Collections.Array();
+            foreach (Mutation m in s.Mutations)
+                muts.Add(m.Name);
             plots.Add(new Godot.Collections.Dictionary
             {
                 ["seed"] = s.Seed?.Name ?? "",
                 ["growth"] = s.Growth,
-                ["mutation"] = s.Mutation.Name,
+                ["mutations"] = muts,
                 ["rolled"] = s.MutationRolled,
                 ["size"] = s.Size,
                 ["slaveOf"] = s.SlaveOf,
@@ -2482,6 +2605,10 @@ public partial class Game3D : Node3D
         var pets = new Godot.Collections.Array();
         foreach (string n in _ownedPets)
             pets.Add(n);
+
+        var packWon = new Godot.Collections.Array();
+        foreach (int wi in _packWon)
+            packWon.Add(wi);
 
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         var data = new Godot.Collections.Dictionary
@@ -2495,6 +2622,7 @@ public partial class Game3D : Node3D
             ["vineBarrierDown"] = _vineBarrierDown,
             ["petsUnlocked"] = _petsUnlocked,
             ["ownedPets"] = pets,
+            ["packWon"] = packWon,
             ["selected"] = _selected,
             ["plots"] = plots,
             ["time"] = Time.GetUnixTimeFromSystem(),
@@ -2544,6 +2672,11 @@ public partial class Game3D : Node3D
                     _ownedPets.Add(nm);
             }
         }
+        if (data.ContainsKey("packWon"))
+        {
+            foreach (Variant wv in data["packWon"].AsGodotArray())
+                _packWon.Add((int)wv);
+        }
         if (data.ContainsKey("selected"))
             _selected = (int)data["selected"]; // clamped in _Ready once the seed list is built
 
@@ -2569,23 +2702,27 @@ public partial class Game3D : Node3D
 
             st.Seed = seed;
             st.Growth = (float)(double)pd["growth"];
-            st.Mutation = Mutation.ByName((string)pd["mutation"]);
+            st.Mutations.Clear();
+            if (pd.ContainsKey("mutations"))
+            {
+                foreach (Variant mv in pd["mutations"].AsGodotArray())
+                    st.AddMutation(Mutation.ByName(mv.AsString()));
+            }
+            else if (pd.ContainsKey("mutation"))   // older single-mutation saves
+            {
+                st.AddMutation(Mutation.ByName((string)pd["mutation"]));
+            }
             st.MutationRolled = (bool)pd["rolled"];
             st.Size = pd.ContainsKey("size") ? (float)(double)pd["size"] : 1f;
             st.SlaveOf = slaveOf;
 
-            Grow(st, (float)elapsed);
-            if (st.IsReady && !st.MutationRolled)
-            {
-                st.Mutation = Mutation.Roll(null, st.Seed.Rarity);
-                st.MutationRolled = true;
-            }
+            Grow(st, (float)elapsed);   // Grow rolls the initial mutation if it ripens during offline time
         }
 
         // Re-establish multi-tile visuals for any loaded footprint-4 master plants.
         for (int i = 0; i < _states.Length; i++)
-            if (_states[i].Seed is { Footprint: >= 4 })
-                SetupMulti(i);
+            if (_states[i].Seed is { Footprint: >= 2 } ms)
+                SetupMulti(i, ms.Footprint);
     }
 
     // ---- helpers ----------------------------------------------------------

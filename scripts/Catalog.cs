@@ -71,7 +71,32 @@ public static class Catalog
     /// Dimensional → Galaxy → Solar → Blackhole.</summary>
     public static List<SeedType> UniSeeds => _uniSeeds ??= BuildUni();
 
-    /// <summary>Find a seed in any catalog (base, Magical Tree, Hidden Grove, Uni-Grape).</summary>
+    private static List<SeedType>? _packSeeds;
+
+    /// <summary>Cost to spin the Mystery Pack for a random top-tier fruit.</summary>
+    public const double PackCost = 1e27;
+
+    /// <summary>The three best fruits in the game — only obtainable from the Mystery Pack.</summary>
+    public static List<SeedType> PackSeeds => _packSeeds ??= new()
+    {
+        new SeedType
+        {
+            Name = "Burning Bud", Rarity = "Mystic", Cost = 5e27, BaseValue = 1e30,
+            GrowSeconds = 150f, Color = new Color("ff5a2a"), Shape = PlantShape.BurningBud, Footprint = 2,
+        },
+        new SeedType
+        {
+            Name = "Sugar Apple", Rarity = "Mystic", Cost = 6e27, BaseValue = 1.3e30,
+            GrowSeconds = 140f, Color = new Color("9aff6a"), Shape = PlantShape.SugarApple,
+        },
+        new SeedType
+        {
+            Name = "Candy Cane", Rarity = "Mystic", Cost = 4e27, BaseValue = 8e29,
+            GrowSeconds = 120f, Color = new Color("ff4d6a"), Shape = PlantShape.CandyCane, RainbowMultiplier = 120,
+        },
+    };
+
+    /// <summary>Find a seed in any catalog.</summary>
     public static SeedType? SeedByNameAny(string name)
     {
         SeedType? s = SeedByName(name);
@@ -82,13 +107,15 @@ public static class Catalog
             if (g.Name == name) return g;
         foreach (SeedType u in UniSeeds)
             if (u.Name == name) return u;
+        foreach (SeedType pk in PackSeeds)
+            if (pk.Name == name) return pk;
         return null;
     }
 
     /// <summary>Touch every catalog so build errors surface eagerly (e.g. at startup).</summary>
     public static void Warmup()
     {
-        _ = Seeds; _ = TreeSeeds; _ = GroveSeeds; _ = UniSeeds; _ = Pets;
+        _ = Seeds; _ = TreeSeeds; _ = GroveSeeds; _ = UniSeeds; _ = PackSeeds; _ = Pets;
     }
 
     // ---- catalog construction --------------------------------------------

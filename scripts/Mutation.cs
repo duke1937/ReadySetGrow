@@ -39,7 +39,7 @@ public sealed class Mutation
 
     // Event-only mutations (rolled while the matching weather event is active).
     public static readonly Mutation SunTouch = new()  { Name = "Sun-touch", Multiplier = 30f, Chance = 0f, Tint = new Color("ffcf3a") };
-    public static readonly Mutation Weird = new()     { Name = "Weird",     Multiplier = 24f, Chance = 0f, Tint = new Color("8a8a3a") };
+    public static readonly Mutation Weird = new()     { Name = "Strange",   Multiplier = 24f, Chance = 0f, Tint = new Color("8a8a3a") };
     public static readonly Mutation Big = new()       { Name = "Big",       Multiplier = 5f,  Chance = 0f, Tint = new Color("9aff9a") };
     public static readonly Mutation Gigantic = new()  { Name = "Gigantic",  Multiplier = 30f, Chance = 0f, Tint = new Color("5aff5a") };
 
@@ -77,7 +77,7 @@ public sealed class Mutation
             return ByName("Rainbow");
         if (activeEvent == "Solar" && GD.Randf() < 0.35f)
             return SunTouch;
-        if (activeEvent == "Strange" && GD.Randf() < 0.35f)
+        if (activeEvent == "Strange" && GD.Randf() < 0.90f)
             return Weird;
         if (activeEvent == "Ground")               // ground event mutates every crop
             return GD.Randf() < 0.6f ? Big : Gigantic;

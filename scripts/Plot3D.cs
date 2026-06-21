@@ -110,7 +110,7 @@ public partial class Plot3D : Node3D
         float grow = Mathf.Lerp(0.2f, 1f, State.Progress);
         float scale = grow * State.Size * ExtraScale;
         bool ready = State.IsReady;
-        bool mutated = !State.Mutation.IsNormal;
+        bool mutated = State.IsMutated;
         float bob = ready ? Mathf.Sin(_bobPhase) * 0.04f : 0f;
 
         _plantRoot!.Scale = new Vector3(scale, scale, scale);
@@ -123,7 +123,7 @@ public partial class Plot3D : Node3D
             m.EmissionEnabled = glow;
             if (glow)
             {
-                m.Emission = mutated ? State.Mutation.Tint : seed.Color;
+                m.Emission = mutated ? State.Primary.Tint : seed.Color;
                 m.EmissionEnergyMultiplier = mutated ? 2.0f : (ready ? 1.2f : 0.6f);
             }
         }
@@ -131,9 +131,9 @@ public partial class Plot3D : Node3D
         _label.Position = PlantOffset + new Vector3(0, 1.3f * State.Size * ExtraScale + 0.6f, 0);
         if (ready)
         {
-            string mut = mutated ? State.Mutation.Name + " " : "";
+            string mut = mutated ? $"✨{State.Mutations.Count}× " : "";
             _label.Text = $"{mut}{SizeWord(State.Size)}{seed.Name}\n+{Num.Fmt(State.Payout)}";
-            _label.Modulate = mutated ? State.Mutation.Tint : new Color("ffe66d");
+            _label.Modulate = mutated ? State.Primary.Tint : new Color("ffe66d");
         }
         else
         {

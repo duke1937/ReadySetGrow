@@ -50,6 +50,9 @@ public static class PlantVisual
             case PlantShape.Bamboo: Bamboo(root, c, glow); magic = true; break;
             case PlantShape.Mushroom: Mushroom(root, c, glow); magic = true; break;
             case PlantShape.Snapdragon: Snapdragon(root, c, glow); magic = true; break;
+            case PlantShape.BurningBud: BurningBud(root, c, glow); magic = true; break;
+            case PlantShape.SugarApple: SugarApple(root, c, glow); magic = true; break;
+            case PlantShape.CandyCane: CandyCane(root, c, glow); magic = true; break;
             default: Bush(root, c, glow); break;
         }
 
@@ -249,6 +252,53 @@ public static class PlantVisual
             Add(p, Sph(0.13f), new Vector3(side, y, 0), fm, new Vector3(1.2f, 1.0f, 1.0f));
         }
         Add(p, Sph(0.12f), new Vector3(0, 0.85f + 6 * 0.18f, 0), fm); // top bud
+    }
+
+    private static void BurningBud(Node3D p, Color c, List<StandardMaterial3D> g)
+    {
+        // A very long flower whose stem leans to the left as it rises.
+        var stemMat = M(Stem, 0.8f);
+        const int seg = 6;
+        const float segH = 0.45f;
+        for (int i = 0; i < seg; i++)
+        {
+            float t = i / (float)(seg - 1);
+            float x = -0.55f * t;     // lean left
+            Add(p, Cyl(0.07f, segH + 0.06f), new Vector3(x, 0.25f + i * segH, 0), stemMat);
+        }
+        float topX = -0.55f, topY = 0.25f + seg * segH;
+        var fm = Fruit(c, g, 0.4f);
+        Add(p, Sph(0.28f), new Vector3(topX, topY, 0), fm);            // fiery centre
+        for (int i = 0; i < 8; i++)                                     // petals in a vertical fan
+        {
+            float a = Mathf.DegToRad(i * 45f);
+            Add(p, Sph(0.17f), new Vector3(topX + Mathf.Cos(a) * 0.3f, topY + Mathf.Sin(a) * 0.3f, 0),
+                fm, new Vector3(1.3f, 0.5f, 0.7f), new Vector3(0, 0, i * 45f));
+        }
+    }
+
+    private static void SugarApple(Node3D p, Color c, List<StandardMaterial3D> g)
+    {
+        Add(p, Cyl(0.09f, 1.4f), new Vector3(0, 0.7f, 0), M(Trunk, 0.9f));                                  // tall trunk
+        Add(p, Sph(0.5f), new Vector3(0, 1.5f, 0), M(BushGreen, 0.85f), new Vector3(1.1f, 0.9f, 1.1f));     // canopy
+        var fm = Fruit(c, g, 0.45f);
+        Add(p, Sph(0.14f), new Vector3(0.28f, 1.3f, 0.05f), fm, new Vector3(0.9f, 1.7f, 0.9f));             // long green apples
+        Add(p, Sph(0.14f), new Vector3(-0.26f, 1.46f, -0.05f), fm, new Vector3(0.9f, 1.7f, 0.9f));
+        Add(p, Sph(0.13f), new Vector3(0.05f, 1.24f, -0.28f), fm, new Vector3(0.9f, 1.8f, 0.9f));
+    }
+
+    private static void CandyCane(Node3D p, Color c, List<StandardMaterial3D> g)
+    {
+        var red = Fruit(c, g, 0.4f);                       // c is red
+        var white = Fruit(new Color("fff0f0"), g, 0.4f);
+        const int seg = 8;
+        const float segH = 0.18f;
+        for (int i = 0; i < seg; i++)                       // striped vertical shaft
+            Add(p, Cyl(0.09f, segH + 0.02f), new Vector3(0, 0.2f + i * segH, 0), (i % 2 == 0) ? red : white);
+        float baseY = 0.2f + seg * segH;                    // the hook
+        Add(p, Cyl(0.09f, 0.18f), new Vector3(0.08f, baseY + 0.02f, 0), red, rot: new Vector3(0, 0, 40));
+        Add(p, Cyl(0.09f, 0.18f), new Vector3(0.22f, baseY + 0.06f, 0), white, rot: new Vector3(0, 0, 75));
+        Add(p, Cyl(0.09f, 0.16f), new Vector3(0.34f, baseY - 0.02f, 0), red, rot: new Vector3(0, 0, 110));
     }
 
     // ---- helpers ----------------------------------------------------------

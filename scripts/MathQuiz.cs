@@ -12,7 +12,7 @@ public partial class MathQuiz : Control
     public System.Action? OnComplete;
     public System.Action? OnCancel;
 
-    private const int Total = 5;
+    private const int Total = 3;
 
     private readonly (int A, int B)[] _q = new (int, int)[Total];
     private int _idx;
@@ -61,7 +61,7 @@ public partial class MathQuiz : Control
 
         var title = new Label
         {
-            Text = "🌱 Grow All — solve 5 to grow everything!",
+            Text = "🌱 Grow All — solve 3 to grow everything!",
             HorizontalAlignment = HorizontalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };

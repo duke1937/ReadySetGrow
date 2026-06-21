@@ -21,6 +21,9 @@ public enum PlantShape
     Bamboo,     // a very tall stalk that spirals upward
     Mushroom,   // a thick stem with a big spotted cap
     Snapdragon, // a tall flowering spike of blossoms
+    BurningBud, // a very long flower that leans left
+    SugarApple, // a tall tree of long green apples
+    CandyCane,  // a striped candy-cane hook
 }
 
 /// <summary>A kind of plant the player can buy and grow.</summary>
@@ -33,7 +36,8 @@ public sealed class SeedType
     public required float GrowSeconds { get; init; } // real seconds from plant -> ready
     public required Color Color { get; init; }       // fruit colour used when drawing
     public PlantShape Shape { get; init; } = PlantShape.Bush; // 3D growth form (defaults harmlessly for the 2D game)
-    public int Footprint { get; init; } = 1;         // planting spots taken (4 = a 2x2 block)
+    public int Footprint { get; init; } = 1;         // planting spots taken (2 = a 1x2 pair, 4 = a 2x2 block)
+    public double RainbowMultiplier { get; init; } = 0; // if >0, Rainbow mutations on this crop use this instead of 25x
 
     /// <summary>Colour used to tag the rarity in the shop.</summary>
     public Color RarityColor => Rarity switch
@@ -60,6 +64,7 @@ public sealed class SeedType
         "Galaxy"    => new Color("4a7aff"),
         "Solar"     => new Color("ffb02a"),
         "Blackhole" => new Color("8a30ff"),
+        "Mystic"    => new Color("ff77ff"),
         _            => new Color("c8c8c8"), // Common
     };
 }
