@@ -37,6 +37,12 @@ public sealed class Mutation
         Name = "Rainbow Giant", Multiplier = 300f, Chance = 0f, Tint = new Color("ff8af0")
     };
 
+    // Event-only mutations (rolled while the matching weather event is active).
+    public static readonly Mutation SunTouch = new()  { Name = "Sun-touch", Multiplier = 30f, Chance = 0f, Tint = new Color("ffcf3a") };
+    public static readonly Mutation Weird = new()     { Name = "Weird",     Multiplier = 24f, Chance = 0f, Tint = new Color("8a8a3a") };
+    public static readonly Mutation Big = new()       { Name = "Big",       Multiplier = 5f,  Chance = 0f, Tint = new Color("9aff9a") };
+    public static readonly Mutation Gigantic = new()  { Name = "Gigantic",  Multiplier = 30f, Chance = 0f, Tint = new Color("5aff5a") };
+
     /// <summary>Rarest first — Roll() returns the first one that hits.</summary>
     public static readonly List<Mutation> Table = new()
     {
@@ -69,6 +75,12 @@ public sealed class Mutation
             return Shocked;
         if (activeEvent == "Rainbow" && GD.Randf() < 0.30f)
             return ByName("Rainbow");
+        if (activeEvent == "Solar" && GD.Randf() < 0.35f)
+            return SunTouch;
+        if (activeEvent == "Strange" && GD.Randf() < 0.35f)
+            return Weird;
+        if (activeEvent == "Ground")               // ground event mutates every crop
+            return GD.Randf() < 0.6f ? Big : Gigantic;
 
         foreach (Mutation m in Table)
         {
@@ -83,6 +95,10 @@ public sealed class Mutation
         if (name == Shocked.Name) return Shocked;
         if (name == Giant.Name) return Giant;
         if (name == RainbowGiant.Name) return RainbowGiant;
+        if (name == SunTouch.Name) return SunTouch;
+        if (name == Weird.Name) return Weird;
+        if (name == Big.Name) return Big;
+        if (name == Gigantic.Name) return Gigantic;
         foreach (Mutation m in Table)
             if (m.Name == name) return m;
         return Normal;

@@ -65,6 +65,9 @@ public partial class Sfx : Node
                                     (0.16f, 1046f, 0.6f, 0.4f, 3f), (0.32f, 1318f, 0.6f, 0.35f, 3f));
         _bank["storm"]      = Storm();
         _bank["thunder"]    = Thunder();
+        _bank["solar"]      = Build((0f, 784f, 0.10f, 0.4f, 10f), (0.08f, 1046f, 0.10f, 0.4f, 10f), (0.16f, 1318f, 0.22f, 0.45f, 7f));
+        _bank["strange"]    = Build((0f, 300f, 0.18f, 0.4f, 7f), (0f, 322f, 0.18f, 0.28f, 7f), (0.1f, 250f, 0.22f, 0.34f, 7f));
+        _bank["ground"]     = Build((0f, 80f, 0.5f, 0.5f, 3f), (0f, 58f, 0.5f, 0.4f, 3f), (0f, 120f, 0.12f, 0.4f, 8f));
     }
 
     // ---- synthesis --------------------------------------------------------

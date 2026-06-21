@@ -65,7 +65,13 @@ public static class Catalog
     /// <summary>The Hidden Grove's catalog: Hidden → Alpha → Strange → Celestial → Infinite.</summary>
     public static List<SeedType> GroveSeeds => _groveSeeds ??= BuildGrove();
 
-    /// <summary>Find a seed in the base, Magical Tree, or Hidden Grove catalogs.</summary>
+    private static List<SeedType>? _uniSeeds;
+
+    /// <summary>The Uni-Grape catalog (reached by climbing the vine):
+    /// Dimensional → Galaxy → Solar → Blackhole.</summary>
+    public static List<SeedType> UniSeeds => _uniSeeds ??= BuildUni();
+
+    /// <summary>Find a seed in any catalog (base, Magical Tree, Hidden Grove, Uni-Grape).</summary>
     public static SeedType? SeedByNameAny(string name)
     {
         SeedType? s = SeedByName(name);
@@ -74,13 +80,15 @@ public static class Catalog
             if (t.Name == name) return t;
         foreach (SeedType g in GroveSeeds)
             if (g.Name == name) return g;
+        foreach (SeedType u in UniSeeds)
+            if (u.Name == name) return u;
         return null;
     }
 
     /// <summary>Touch every catalog so build errors surface eagerly (e.g. at startup).</summary>
     public static void Warmup()
     {
-        _ = Seeds; _ = TreeSeeds; _ = GroveSeeds; _ = Pets;
+        _ = Seeds; _ = TreeSeeds; _ = GroveSeeds; _ = UniSeeds; _ = Pets;
     }
 
     // ---- catalog construction --------------------------------------------
@@ -241,6 +249,55 @@ public static class Catalog
         ("Infinite Bloom","ffd0ff"), ("Endless Berry","f0c0ff"), ("Omega Fruit","ffe0ff"), ("Boundless Bloom","e8c8ff"), ("Forever Seed","fff0ff"),
     };
 
+    // ---- Uni-Grape catalog construction -----------------------------------
+
+    private static List<SeedType> BuildUni()
+    {
+        const double baseCost = 1e22;   // beyond the Hidden Grove / Centurnial pack
+        const double costRatio = 2.0;
+
+        var list = new List<SeedType>(UniEntries.Length);
+        for (int i = 0; i < UniEntries.Length; i++)
+        {
+            string rarity = UniRarityForIndex(i);
+            double cost = NiceRound(baseCost * Math.Pow(costRatio, i));
+            double value = NiceRound(cost * (1.9 + RarityBonus(rarity)));
+            float grow = (float)Math.Round(120.0 * Math.Pow(1.05, i));
+
+            list.Add(new SeedType
+            {
+                Name = UniEntries[i].Name,
+                Rarity = rarity,
+                Cost = cost,
+                BaseValue = value,
+                GrowSeconds = grow,
+                Color = new Color(UniEntries[i].Hex),
+                Shape = ShapeFor(UniEntries[i].Name, rarity),
+            });
+        }
+        return list;
+    }
+
+    private static string UniRarityForIndex(int i)
+    {
+        if (i < 3) return "Dimensional";
+        if (i < 6) return "Galaxy";
+        if (i < 9) return "Solar";
+        return "Blackhole";
+    }
+
+    private static readonly (string Name, string Hex)[] UniEntries =
+    {
+        // Dimensional (3)
+        ("Dimensional Seed","b15cff"), ("Rift Berry","9a5cff"), ("Warp Grape","c060ff"),
+        // Galaxy (3)
+        ("Galaxy Seed","4a7aff"), ("Starfield Bloom","6a8aff"), ("Cosmos Fruit","3a5aff"),
+        // Solar (3)
+        ("Solar Seed","ffb02a"), ("Sunflare Bloom","ffd24a"), ("Corona Fruit","ff8a1a"),
+        // Blackhole (1) — the ultimate
+        ("Blackhole Seed","8a30ff"),
+    };
+
     // ---- Pets -------------------------------------------------------------
 
     public sealed class Pet
@@ -333,6 +390,10 @@ public static class Catalog
             "Strange" => PlantShape.Flower,
             "Celestial" => PlantShape.Divine,
             "Infinite" => PlantShape.Divine,
+            "Dimensional" => PlantShape.Crystal,
+            "Galaxy" => PlantShape.Star,
+            "Solar" => PlantShape.Star,
+            "Blackhole" => PlantShape.Divine,
             _ => PlantShape.Bush,
         },
     };
@@ -355,6 +416,10 @@ public static class Catalog
         "Strange"   => 2.20,
         "Celestial" => 3.00,
         "Infinite"  => 4.00,
+        "Dimensional"=> 5.00,
+        "Galaxy"    => 7.00,
+        "Solar"     => 9.00,
+        "Blackhole" => 15.00,
         _            => 0.0,
     };
 

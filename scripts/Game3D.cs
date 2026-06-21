@@ -16,7 +16,7 @@ public partial class Game3D : Node3D
 
     // First-person tuning.
     private const float WalkSpeed = 5.0f;
-    private const float JumpSpeed = 5.0f;
+    private const float JumpSpeed = 6.5f;   // tall enough to hop up the vine's leaves
     private const float Gravity = 22f;
     private const float MouseSensitivity = 0.0024f;
     private const float ReachDistance = 5.0f;
@@ -58,6 +58,15 @@ public partial class Game3D : Node3D
     // --- hidden grove (unlocks at 1 Qi) ---
     private bool _groveUnlocked;
     private readonly List<StandardMaterial3D> _groveGlow = new();
+
+    // --- uni-grape (unlocks by climbing the leaf vine) ---
+    private const double VineBarrierCost = 5e24;   // 5 Sp to drop the barrier and climb
+    private bool _uniUnlocked;
+    private bool _vineBarrierDown;
+    private readonly List<StandardMaterial3D> _uniGlow = new();
+    private Node3D? _vineBarrier;
+    private Vector3 _vineTop;
+    private Vector3 _vineBase;
 
     // --- pets (shop unlocks at 100 Qa) ---
     private bool _petsUnlocked;
@@ -144,16 +153,30 @@ public partial class Game3D : Node3D
         _activeSeeds = new List<SeedType>(Catalog.Seeds);
         _activeSeeds.AddRange(Catalog.TreeSeeds);
         _activeSeeds.AddRange(Catalog.GroveSeeds);
+        _activeSeeds.AddRange(Catalog.UniSeeds);
     }
 
     private static int BaseCount => Catalog.Seeds.Count;
     private static int TreeEnd => Catalog.Seeds.Count + Catalog.TreeSeeds.Count;
+    private static int GroveEnd => TreeEnd + Catalog.GroveSeeds.Count;
 
-    private bool IndexUnlocked(int i) =>
-        i < BaseCount || (i < TreeEnd ? _treeUnlocked : _groveUnlocked);
+    private bool IndexUnlocked(int i)
+    {
+        if (i < BaseCount) return true;
+        if (i < TreeEnd) return _treeUnlocked;
+        if (i < GroveEnd) return _groveUnlocked;
+        return _uniUnlocked;
+    }
 
+    // -1 means "not a coin unlock" (the Uni-Grape is reached by climbing).
     private static double UnlockCostForIndex(int i) =>
-        i < BaseCount ? 0 : i < TreeEnd ? Catalog.TreeUnlockCost : Catalog.GroveUnlockCost;
+        i < BaseCount ? 0 : i < TreeEnd ? Catalog.TreeUnlockCost : i < GroveEnd ? Catalog.GroveUnlockCost : -1;
+
+    private static string LockMessage(int i)
+    {
+        double c = UnlockCostForIndex(i);
+        return c < 0 ? "climb the Uni-Grape vine 🍇" : $"reach {Num.Fmt(c)} 🪙";
+    }
 
     // ---- multi-tile (footprint) helpers -----------------------------------
 
@@ -223,6 +246,8 @@ public partial class Game3D : Node3D
         RecomputePetBonuses();
         SetTreeGlow(_treeUnlocked);
         SetGroveGlow(_groveUnlocked);
+        SetUniGlow(_uniUnlocked);
+        if (_vineBarrierDown) DropBarrier();
         SetPetsGlow(_petsUnlocked);
         _petsPanel.Visible = _petsUnlocked;
         if (_petsUnlocked) PopulatePets();
@@ -251,6 +276,14 @@ public partial class Game3D : Node3D
                 UnlockPets();
             if (!_groveUnlocked && _coins >= Catalog.GroveUnlockCost)
                 UnlockGrove();
+            if (!_vineBarrierDown && _coins >= VineBarrierCost)
+            {
+                DropBarrier();
+                _sfx.Play("unlock", -4f);
+                ShowToast("🔮 The vine barrier drops — climb up to the Uni-Grape!", new Color("9fd8ff"));
+            }
+            if (!_uniUnlocked && _player.GlobalPosition.DistanceTo(_vineTop) < 4f)
+                UnlockUni();
             UpdateTarget();
 
             if (_auto && !_quizOpen)
@@ -474,6 +507,14 @@ public partial class Game3D : Node3D
                 else
                     SetPrompt($"🐾 Pets Shop — locked. Reach {Num.Fmt(Catalog.PetsUnlockCost)} 🪙 (you have {Num.Fmt(_coins)})", new Color("ffd9a8"));
                 return;
+            case "unigrape":
+                SetPrompt(_uniUnlocked
+                    ? "🍇 Uni-Grape — its seeds are in the shop (hold Shift)"
+                    : "🍇 The Uni-Grape — stand up here to unlock its seeds!", new Color("d8b8ff"));
+                return;
+            case "barrier":
+                SetPrompt($"🔮 Vine barrier — reach {Num.Fmt(VineBarrierCost)} 🪙 to enter (you have {Num.Fmt(_coins)})", new Color("9fd8ff"));
+                return;
             case "plot" when _targeted is not null:
             {
                 PlotState st = _targeted.State;
@@ -516,6 +557,8 @@ public partial class Game3D : Node3D
             case "tree": UseTree(); break;
             case "grove": UseGrove(); break;
             case "pets": UsePetsShop(); break;
+            case "unigrape": UseUni(); break;
+            case "barrier": UseBarrier(); break;
             case "plot" when _targeted is not null: UsePlot(_targeted); break;
         }
     }
@@ -587,6 +630,52 @@ public partial class Game3D : Node3D
             m.EmissionEnabled = true;
             m.Emission = m.AlbedoColor;
             m.EmissionEnergyMultiplier = on ? 2.2f : 0.4f;
+        }
+    }
+
+    // ---- uni-grape (reached by climbing) ----------------------------------
+
+    private void UseBarrier()
+    {
+        if (_coins >= VineBarrierCost)
+        {
+            DropBarrier();
+            _sfx.Play("unlock", -4f);
+            ShowToast("🔮 Barrier dropped — climb the vine to the Uni-Grape!", new Color("9fd8ff"));
+        }
+        else
+        {
+            _sfx.Play("error");
+            ShowToast($"Locked — reach {Num.Fmt(VineBarrierCost)} 🪙 to enter the vine.", new Color("ff8a7a"));
+        }
+    }
+
+    private void UseUni()
+    {
+        if (!_uniUnlocked)
+            UnlockUni();
+        else
+            ShowToast("🍇 Uni-Grape seeds are in the shop — hold Shift to browse.", new Color("d8b8ff"));
+    }
+
+    private void UnlockUni()
+    {
+        if (_uniUnlocked) return;
+        _uniUnlocked = true;
+        RebuildSeedList();
+        PopulateShop();
+        SetUniGlow(true);
+        _sfx.Play("unlock", -3f);
+        ShowToast("🍇 UNI-GRAPE REACHED! Dimensional · Galaxy · Solar · Blackhole seeds unlocked!", new Color("d8b8ff"));
+    }
+
+    private void SetUniGlow(bool on)
+    {
+        foreach (StandardMaterial3D m in _uniGlow)
+        {
+            m.EmissionEnabled = true;
+            m.Emission = m.AlbedoColor;
+            m.EmissionEnergyMultiplier = on ? 2.4f : 0.6f;
         }
     }
 
@@ -679,7 +768,7 @@ public partial class Game3D : Node3D
             if (!IndexUnlocked(_selected))
             {
                 _sfx.Play("error");
-                ShowToast($"🔒 {seed.Name} is locked — reach {Num.Fmt(UnlockCostForIndex(_selected))} 🪙", new Color("ff8a7a"));
+                ShowToast($"🔒 {seed.Name} is locked — {LockMessage(_selected)}", new Color("ff8a7a"));
                 return;
             }
             if (seed.Footprint >= 4)
@@ -802,34 +891,53 @@ public partial class Game3D : Node3D
 
         _eventBanner.Visible = true;
         int s = Mathf.Max(0, Mathf.CeilToInt((float)_eventRemaining));
-        if (_activeEvent == "Storm")
+        (string text, string col) = _activeEvent switch
         {
-            _eventBanner.Text = $"⛈  STORM  —  crops can turn SHOCKED (48×)!   {s}s";
-            _eventBanner.AddThemeColorOverride("font_color", new Color("bcd0ff"));
-        }
-        else
-        {
-            _eventBanner.Text = $"🌈  RAINBOW  —  crops often turn Rainbow (25×)!   {s}s";
-            _eventBanner.AddThemeColorOverride("font_color", new Color("ffc4f0"));
-        }
+            "Storm"   => ($"⛈  STORM  —  crops can turn SHOCKED (48×)!   {s}s", "bcd0ff"),
+            "Rainbow" => ($"🌈  RAINBOW  —  crops often turn Rainbow (25×)!   {s}s", "ffc4f0"),
+            "Solar"   => ($"☀  SOLAR FLARE  —  Sun-touch (30×) chance!   {s}s", "ffe08a"),
+            "Strange" => ($"🌀  STRANGE  —  Weird, brown-green (24×)!   {s}s", "c8d08a"),
+            "Ground"  => ($"🟫  GROUND SHIFT  —  Big / Gigantic crops!   {s}s", "d8b48a"),
+            _ => ("", "ffffff"),
+        };
+        _eventBanner.Text = text;
+        _eventBanner.AddThemeColorOverride("font_color", new Color(col));
     }
+
+    private static readonly string[] EventTypes = { "Storm", "Rainbow", "Solar", "Strange", "Ground" };
 
     private void StartEvent()
     {
-        _activeEvent = GD.Randf() < 0.5f ? "Storm" : "Rainbow";
+        _activeEvent = EventTypes[(int)(GD.Randi() % (uint)EventTypes.Length)];
         _eventRemaining = EventDuration;
         SetWeatherVisuals(_activeEvent);
-        if (_activeEvent == "Storm")
+        switch (_activeEvent)
         {
-            _eventTint.Color = new Color(0.10f, 0.13f, 0.30f, 0.14f);
-            _sfx.Play("storm", -4f);
-            ShowToast("⛈ STORM rolling in! Crops that ripen now can become SHOCKED (48×)!", new Color("bcd0ff"));
-        }
-        else
-        {
-            _eventTint.Color = new Color(1f, 0.5f, 0.9f, 0.06f);
-            _sfx.Play("rainbow", -5f);
-            ShowToast("🌈 RAINBOW! Crops that ripen now often turn Rainbow (25×)!", new Color("ffc4f0"));
+            case "Storm":
+                _eventTint.Color = new Color(0.10f, 0.13f, 0.30f, 0.14f);
+                _sfx.Play("storm", -4f);
+                ShowToast("⛈ STORM rolling in! Crops that ripen now can become SHOCKED (48×)!", new Color("bcd0ff"));
+                break;
+            case "Rainbow":
+                _eventTint.Color = new Color(1f, 0.5f, 0.9f, 0.06f);
+                _sfx.Play("rainbow", -5f);
+                ShowToast("🌈 RAINBOW! Crops that ripen now often turn Rainbow (25×)!", new Color("ffc4f0"));
+                break;
+            case "Solar":
+                _eventTint.Color = new Color(1f, 0.8f, 0.2f, 0.12f);
+                _sfx.Play("solar", -5f);
+                ShowToast("☀ SOLAR FLARE! Crops that ripen now can gain Sun-touch (30×)!", new Color("ffe08a"));
+                break;
+            case "Strange":
+                _eventTint.Color = new Color(0.4f, 0.5f, 0.2f, 0.18f);
+                _sfx.Play("strange", -5f);
+                ShowToast("🌀 STRANGE! Crops grow Weird & brown-green (24×)!", new Color("c8d08a"));
+                break;
+            case "Ground":
+                _eventTint.Color = new Color(0.4f, 0.28f, 0.14f, 0.18f);
+                _sfx.Play("ground", -4f);
+                ShowToast("🟫 GROUND SHIFT! Every crop that ripens turns Big or Gigantic!", new Color("d8b48a"));
+                break;
         }
         _eventTint.Visible = true;
     }
@@ -846,34 +954,30 @@ public partial class Game3D : Node3D
 
     private void SetWeatherVisuals(string evt)
     {
-        bool storm = evt == "Storm";
-        bool rainbow = evt == "Rainbow";
+        _stormFx.Visible = evt == "Storm";
+        _rainFx.Emitting = evt == "Storm";
+        _rainbowFx.Visible = evt == "Rainbow";
 
-        _stormFx.Visible = storm;
-        _rainFx.Emitting = storm;
-        _rainbowFx.Visible = rainbow;
-
-        if (storm)
+        switch (evt)
         {
-            _sunBaseEnergy = 0.4f;
-            _sun.LightColor = new Color("aab2c4");
-            _env.AmbientLightEnergy = 0.25f;
-            SetSky("2a2f3a", "474f5e", "262b26", "39423a");
-            _lightningIn = 1.0;
-        }
-        else if (rainbow)
-        {
-            _sunBaseEnergy = 1.3f;
-            _sun.LightColor = Colors.White;
-            _env.AmbientLightEnergy = 0.6f;
-            SetSky("5a96e6", "d8f0ff", "3a5a30", "9cc77a");
-        }
-        else
-        {
-            _sunBaseEnergy = 1.15f;
-            _sun.LightColor = Colors.White;
-            _env.AmbientLightEnergy = 0.45f;
-            SetSky("4a86d6", "bfe3ff", "3a5a30", "9cc77a");
+            case "Storm":
+                _sunBaseEnergy = 0.4f; _sun.LightColor = new Color("aab2c4"); _env.AmbientLightEnergy = 0.25f;
+                SetSky("2a2f3a", "474f5e", "262b26", "39423a"); _lightningIn = 1.0; break;
+            case "Rainbow":
+                _sunBaseEnergy = 1.3f; _sun.LightColor = Colors.White; _env.AmbientLightEnergy = 0.6f;
+                SetSky("5a96e6", "d8f0ff", "3a5a30", "9cc77a"); break;
+            case "Solar":
+                _sunBaseEnergy = 1.9f; _sun.LightColor = new Color("fff0c0"); _env.AmbientLightEnergy = 0.8f;
+                SetSky("e8a040", "ffe0a0", "6a5a30", "c8a050"); break;
+            case "Strange":
+                _sunBaseEnergy = 0.7f; _sun.LightColor = new Color("aac070"); _env.AmbientLightEnergy = 0.4f;
+                SetSky("4a5a2a", "7a8a4a", "3a4a1a", "6a7a3a"); break;
+            case "Ground":
+                _sunBaseEnergy = 0.8f; _sun.LightColor = new Color("d0a070"); _env.AmbientLightEnergy = 0.45f;
+                SetSky("6a4a2a", "b08050", "4a3018", "7a5530"); break;
+            default:
+                _sunBaseEnergy = 1.15f; _sun.LightColor = Colors.White; _env.AmbientLightEnergy = 0.45f;
+                SetSky("4a86d6", "bfe3ff", "3a5a30", "9cc77a"); break;
         }
     }
 
@@ -963,8 +1067,184 @@ public partial class Game3D : Node3D
         BuildMagicalTree();
         BuildHiddenGrove();
         BuildPetsShop();
+        BuildVine();
         BuildWeather();
         BuildPlayer();
+    }
+
+    /// <summary>A grape vine of 15 giant leaf platforms spiralling up to the Uni-Grape.</summary>
+    private void BuildVine()
+    {
+        var basePos = new Vector3(-13f, 0, 2f);
+        _vineBase = basePos;
+        const int leaves = 15;
+        const float step = 0.62f;
+        float topY = 1.0f + leaves * step;
+
+        // Central trunk (visual only — no collision, so you can spiral around it freely).
+        AddChild(new MeshInstance3D
+        {
+            Mesh = new CylinderMesh { TopRadius = 0.22f, BottomRadius = 0.34f, Height = topY + 1.4f },
+            Position = basePos + new Vector3(0, (topY + 1.4f) * 0.5f, 0),
+            MaterialOverride = Mat(new Color("3f7a3a")),
+        });
+
+        var leafMat = Mat(new Color("4aa64a"), 0.8f);
+        var stemMat = Mat(new Color("3a8a3a"), 0.8f);
+        for (int i = 0; i < leaves; i++)
+        {
+            float ang = Mathf.DegToRad(i * 55f);
+            float y = 1.0f + i * step;
+            Vector3 p = basePos + new Vector3(Mathf.Cos(ang) * 1.9f, y, Mathf.Sin(ang) * 1.9f);
+
+            AddChild(new MeshInstance3D
+            {
+                Mesh = new CylinderMesh { TopRadius = 1.5f, BottomRadius = 1.5f, Height = 0.14f },
+                Position = p,
+                MaterialOverride = leafMat,
+            });
+            AddChild(new MeshInstance3D
+            {
+                Mesh = new CylinderMesh { TopRadius = 0.06f, BottomRadius = 0.06f, Height = 1.9f },
+                Position = basePos + new Vector3(Mathf.Cos(ang) * 0.95f, y, Mathf.Sin(ang) * 0.95f),
+                RotationDegrees = new Vector3(0, -i * 55f, 90),
+                MaterialOverride = stemMat,
+            });
+
+            var body = new StaticBody3D { CollisionLayer = 1, CollisionMask = 0 };  // solid: you can stand on it
+            body.AddChild(new CollisionShape3D { Shape = new CylinderShape3D { Radius = 1.45f, Height = 0.2f }, Position = p });
+            AddChild(body);
+        }
+
+        // Top platform (a big leaf) you climb onto.
+        _vineTop = basePos + new Vector3(0, topY + 0.3f, 0);
+        AddChild(new MeshInstance3D
+        {
+            Mesh = new CylinderMesh { TopRadius = 2.4f, BottomRadius = 2.4f, Height = 0.2f },
+            Position = _vineTop,
+            MaterialOverride = leafMat,
+        });
+        var topBody = new StaticBody3D { CollisionLayer = 1, CollisionMask = 0 };
+        topBody.AddChild(new CollisionShape3D { Shape = new CylinderShape3D { Radius = 2.4f, Height = 0.3f }, Position = _vineTop });
+        AddChild(topBody);
+
+        // The Uni-Grape — a big glowing grape cluster above the platform.
+        Vector3 grapePos = _vineTop + new Vector3(0, 1.7f, 0);
+        Color[] cols = { new("b15cff"), new("4a7aff"), new("ffb02a"), new("8a30ff") };
+        int ci = 0;
+        int[] rows = { 4, 4, 3, 2, 1 };
+        for (int r = 0; r < rows.Length; r++)
+        {
+            float ly = 0.7f - r * 0.34f;
+            float rad = 0.55f * (1f - r * 0.16f);
+            for (int j = 0; j < rows[r]; j++)
+            {
+                float a = Mathf.DegToRad(360f / rows[r] * j + r * 25f);
+                var m = Mat(cols[ci++ % cols.Length], 0.4f);
+                _uniGlow.Add(m);
+                AddChild(new MeshInstance3D
+                {
+                    Mesh = new SphereMesh { Radius = 0.26f, Height = 0.52f },
+                    Position = grapePos + new Vector3(Mathf.Cos(a) * rad, ly, Mathf.Sin(a) * rad),
+                    MaterialOverride = m,
+                });
+            }
+        }
+
+        AddChild(new Label3D
+        {
+            Text = "🍇 Dimensional Grapes\nof the Uni-Grape",
+            Position = grapePos + new Vector3(0, 1.5f, 0),
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FontSize = 80, PixelSize = 0.006f, OutlineSize = 20,
+            Modulate = new Color("d8b8ff"), OutlineModulate = new Color(0, 0, 0, 0.85f),
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+
+        var look = new StaticBody3D { CollisionLayer = 2, CollisionMask = 0 };
+        look.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(2.2f, 2.2f, 2.2f) }, Position = grapePos });
+        look.SetMeta("kind", "unigrape");
+        AddChild(look);
+
+        AddChild(new Label3D
+        {
+            Text = "🍇 Climb me!",
+            Position = basePos + new Vector3(0, 1.5f, 0),
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FontSize = 72, PixelSize = 0.006f, OutlineSize = 18,
+            Modulate = new Color("c8ffc8"), OutlineModulate = new Color(0, 0, 0, 0.85f),
+        });
+
+        BuildVineBarrier(basePos);
+    }
+
+    /// <summary>A force-field wall ringing the vine until the player has 5 Sp.</summary>
+    private void BuildVineBarrier(Vector3 center)
+    {
+        _vineBarrier = new Node3D();
+        AddChild(_vineBarrier);
+
+        const int segs = 16;
+        const float radius = 4.6f;
+        const float wallH = 3.6f;
+
+        var field = new StandardMaterial3D
+        {
+            AlbedoColor = new Color(0.4f, 0.7f, 1f, 0.26f),
+            Emission = new Color(0.4f, 0.7f, 1f),
+            EmissionEnabled = true,
+            EmissionEnergyMultiplier = 0.5f,
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+        };
+
+        for (int i = 0; i < segs; i++)
+        {
+            float a = Mathf.DegToRad(i * (360f / segs));
+            Vector3 p = center + new Vector3(Mathf.Cos(a) * radius, wallH * 0.5f, Mathf.Sin(a) * radius);
+            float width = 2f * radius * Mathf.Sin(Mathf.Pi / segs) + 0.1f;
+
+            _vineBarrier.AddChild(new MeshInstance3D
+            {
+                Mesh = new BoxMesh { Size = new Vector3(width, wallH, 0.12f) },
+                Position = p,
+                RotationDegrees = new Vector3(0, -i * (360f / segs), 0),
+                MaterialOverride = field,
+            });
+            var body = new StaticBody3D { CollisionLayer = 1, CollisionMask = 0 };
+            body.AddChild(new CollisionShape3D
+            {
+                Shape = new BoxShape3D { Size = new Vector3(width, wallH, 0.4f) },
+                Position = p,
+                RotationDegrees = new Vector3(0, -i * (360f / segs), 0),
+            });
+            _vineBarrier.AddChild(body);
+        }
+
+        // Look target for the prompt.
+        var look = new StaticBody3D { CollisionLayer = 2, CollisionMask = 0 };
+        look.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(2f, wallH, 0.6f) }, Position = center + new Vector3(0, wallH * 0.5f, radius) });
+        look.SetMeta("kind", "barrier");
+        _vineBarrier.AddChild(look);
+
+        _vineBarrier.AddChild(new Label3D
+        {
+            Text = $"🔮 Barrier — reach {Num.Fmt(VineBarrierCost)} 🪙 to enter",
+            Position = center + new Vector3(0, wallH + 0.6f, radius),
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FontSize = 64, PixelSize = 0.006f, OutlineSize = 18,
+            Modulate = new Color("9fd8ff"), OutlineModulate = new Color(0, 0, 0, 0.85f),
+        });
+    }
+
+    private void DropBarrier()
+    {
+        _vineBarrierDown = true;
+        if (_vineBarrier is not null)
+        {
+            _vineBarrier.QueueFree();
+            _vineBarrier = null;
+        }
     }
 
     /// <summary>A cluster of small glowing trees at the back-right — the Hidden Grove (1 Qi).</summary>
@@ -1605,7 +1885,9 @@ public partial class Game3D : Node3D
         _coins = Catalog.StartingCoins;
         _basketCount = 0;
         _basketValue = 0;
-        _treeUnlocked = _groveUnlocked = _petsUnlocked = false;
+        _treeUnlocked = _groveUnlocked = _petsUnlocked = _uniUnlocked = false;
+        _vineBarrierDown = false;
+        if (_vineBarrier is null) BuildVineBarrier(_vineBase);
         _ownedPets.Clear();
         RecomputePetBonuses();
         _selected = 0;
@@ -1628,6 +1910,7 @@ public partial class Game3D : Node3D
 
         SetTreeGlow(false);
         SetGroveGlow(false);
+        SetUniGlow(false);
         SetPetsGlow(false);
         _petsPanel.Visible = false;
 
@@ -1895,24 +2178,9 @@ public partial class Game3D : Node3D
             SeedType seed = Seeds[i];
             int index = i;
 
-            if (_treeUnlocked && i == Catalog.Seeds.Count)
-            {
-                var tdiv = new Label { Text = "✨  MAGICAL TREE  ✨" };
-                tdiv.AddThemeFontSizeOverride("font_size", 15);
-                tdiv.AddThemeColorOverride("font_color", new Color("e0b8ff"));
-                _shopList.AddChild(tdiv);
-                lastRarity = "";
-            }
-
-            int groveStart = Catalog.Seeds.Count + (_treeUnlocked ? Catalog.TreeSeeds.Count : 0);
-            if (_groveUnlocked && i == groveStart)
-            {
-                var gdiv = new Label { Text = "🌌  HIDDEN GROVE  🌌" };
-                gdiv.AddThemeFontSizeOverride("font_size", 15);
-                gdiv.AddThemeColorOverride("font_color", new Color("aef0e0"));
-                _shopList.AddChild(gdiv);
-                lastRarity = "";
-            }
+            if (i == BaseCount) { AddShopDivider("✨  MAGICAL TREE  ✨", "e0b8ff"); lastRarity = ""; }
+            else if (i == TreeEnd) { AddShopDivider("🌌  HIDDEN GROVE  🌌", "aef0e0"); lastRarity = ""; }
+            else if (i == GroveEnd) { AddShopDivider("🍇  UNI-GRAPE  🍇", "c89aff"); lastRarity = ""; }
 
             if (seed.Rarity != lastRarity)
             {
@@ -1953,6 +2221,16 @@ public partial class Game3D : Node3D
 
             _shopRows.Add(new ShopRow { Seed = seed, Btn = btn, Box = sbNormal, Info = info });
         }
+
+        UpdateShop();   // fill row text now (don't wait for the next coin-change refresh)
+    }
+
+    private void AddShopDivider(string text, string colorHex)
+    {
+        var d = new Label { Text = text };
+        d.AddThemeFontSizeOverride("font_size", 15);
+        d.AddThemeColorOverride("font_color", new Color(colorHex));
+        _shopList.AddChild(d);
     }
 
     private void SelectSeed(int index)
@@ -1960,7 +2238,7 @@ public partial class Game3D : Node3D
         if (!IndexUnlocked(index))
         {
             _sfx.Play("error");
-            ShowToast($"🔒 Locked — reach {Num.Fmt(UnlockCostForIndex(index))} 🪙 to use {Seeds[index].Name}", new Color("ff8a7a"));
+            ShowToast($"🔒 Locked — {LockMessage(index)} to use {Seeds[index].Name}", new Color("ff8a7a"));
             return;
         }
         _selected = index;
@@ -1989,7 +2267,7 @@ public partial class Game3D : Node3D
             {
                 row.Info.Text =
                     $"[b]{row.Seed.Name}[/b]  [color=#{rc}]{row.Seed.Rarity}[/color]\n" +
-                    $"[color=#9aa6b2]🔒 reach {Num.Fmt(UnlockCostForIndex(k))}🪙[/color]";
+                    $"[color=#9aa6b2]🔒 {LockMessage(k)}[/color]";
             }
             else
             {
@@ -2227,6 +2505,8 @@ public partial class Game3D : Node3D
             ["basketValue"] = _basketValue.ToString("F0", inv),
             ["treeUnlocked"] = _treeUnlocked,
             ["groveUnlocked"] = _groveUnlocked,
+            ["uniUnlocked"] = _uniUnlocked,
+            ["vineBarrierDown"] = _vineBarrierDown,
             ["petsUnlocked"] = _petsUnlocked,
             ["ownedPets"] = pets,
             ["selected"] = _selected,
@@ -2263,6 +2543,10 @@ public partial class Game3D : Node3D
             _treeUnlocked = (bool)data["treeUnlocked"];
         if (data.ContainsKey("groveUnlocked"))
             _groveUnlocked = (bool)data["groveUnlocked"];
+        if (data.ContainsKey("uniUnlocked"))
+            _uniUnlocked = (bool)data["uniUnlocked"];
+        if (data.ContainsKey("vineBarrierDown"))
+            _vineBarrierDown = (bool)data["vineBarrierDown"];
         if (data.ContainsKey("petsUnlocked"))
             _petsUnlocked = (bool)data["petsUnlocked"];
         if (data.ContainsKey("ownedPets"))

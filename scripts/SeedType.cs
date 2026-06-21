@@ -56,6 +56,10 @@ public sealed class SeedType
         "Celestial" => new Color("6a8cff"),
         "Infinite"  => new Color("ffd0ff"),
         "Centurnial"=> new Color("ffe08a"),
+        "Dimensional"=> new Color("b15cff"),
+        "Galaxy"    => new Color("4a7aff"),
+        "Solar"     => new Color("ffb02a"),
+        "Blackhole" => new Color("8a30ff"),
         _            => new Color("c8c8c8"), // Common
     };
 }
