@@ -254,7 +254,7 @@ public static class Catalog
     private static List<SeedType> BuildUni()
     {
         const double baseCost = 1e22;   // beyond the Hidden Grove / Centurnial pack
-        const double costRatio = 2.0;
+        const double costRatio = 1.6;
 
         var list = new List<SeedType>(UniEntries.Length);
         for (int i = 0; i < UniEntries.Length; i++)
@@ -280,22 +280,28 @@ public static class Catalog
 
     private static string UniRarityForIndex(int i)
     {
-        if (i < 3) return "Dimensional";
-        if (i < 6) return "Galaxy";
-        if (i < 9) return "Solar";
+        if (i < 10) return "Dimensional";
+        if (i < 20) return "Galaxy";
+        if (i < 29) return "Solar";
         return "Blackhole";
     }
 
     private static readonly (string Name, string Hex)[] UniEntries =
     {
-        // Dimensional (3)
-        ("Dimensional Seed","b15cff"), ("Rift Berry","9a5cff"), ("Warp Grape","c060ff"),
-        // Galaxy (3)
-        ("Galaxy Seed","4a7aff"), ("Starfield Bloom","6a8aff"), ("Cosmos Fruit","3a5aff"),
-        // Solar (3)
-        ("Solar Seed","ffb02a"), ("Sunflare Bloom","ffd24a"), ("Corona Fruit","ff8a1a"),
-        // Blackhole (1) — the ultimate
-        ("Blackhole Seed","8a30ff"),
+        // Dimensional (10)
+        ("Dimensional Seed","b15cff"), ("Rift Berry","9a5cff"), ("Warp Grape","c060ff"), ("Portal Pod","a64dff"),
+        ("Fracture Fruit","8a5cff"), ("Paradox Plum","b070ff"), ("Echo Bloom","9060e0"), ("Mirror Melon","c87aff"),
+        ("Phase Berry","a050ff"), ("Tesseract Seed","b88aff"),
+        // Galaxy (10)
+        ("Galaxy Seed","4a7aff"), ("Starfield Bloom","6a8aff"), ("Cosmos Fruit","3a5aff"), ("Milkyway Melon","5a6aff"),
+        ("Andromeda Berry","7a9aff"), ("Supernova Pod","4060e0"), ("Comet Grape","6a7aff"), ("Pulsar Plum","5a8aff"),
+        ("Orbit Bloom","8aa0ff"), ("Stardust Seed","4a6aff"),
+        // Solar (9)
+        ("Solar Seed","ffb02a"), ("Sunflare Bloom","ffd24a"), ("Corona Fruit","ff8a1a"), ("Helios Berry","ffc040"),
+        ("Plasma Pod","ff9a30"), ("Radiance Grape","ffaa50"), ("Solaris Melon","ffb838"), ("Flarefruit","ffc868"),
+        ("Heliosphere Seed","ff8a3a"),
+        // Blackhole (4) — the ultimate
+        ("Blackhole Seed","8a30ff"), ("Event Horizon","6a1aaa"), ("Singularity Core","9a40ff"), ("Void Fruit","5a2a8a"),
     };
 
     // ---- Pets -------------------------------------------------------------

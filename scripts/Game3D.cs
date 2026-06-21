@@ -1178,59 +1178,45 @@ public partial class Game3D : Node3D
         BuildVineBarrier(basePos);
     }
 
-    /// <summary>A force-field wall ringing the vine until the player has 5 Sp.</summary>
+    /// <summary>A force-field dome over the vine until the player has 5 Sp.</summary>
     private void BuildVineBarrier(Vector3 center)
     {
         _vineBarrier = new Node3D();
         AddChild(_vineBarrier);
 
-        const int segs = 16;
-        const float radius = 4.6f;
-        const float wallH = 3.6f;
+        const float r = 5.5f;
 
-        var field = new StandardMaterial3D
+        // Translucent glowing dome (a hemisphere).
+        _vineBarrier.AddChild(new MeshInstance3D
         {
-            AlbedoColor = new Color(0.4f, 0.7f, 1f, 0.26f),
-            Emission = new Color(0.4f, 0.7f, 1f),
-            EmissionEnabled = true,
-            EmissionEnergyMultiplier = 0.5f,
-            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-        };
-
-        for (int i = 0; i < segs; i++)
-        {
-            float a = Mathf.DegToRad(i * (360f / segs));
-            Vector3 p = center + new Vector3(Mathf.Cos(a) * radius, wallH * 0.5f, Mathf.Sin(a) * radius);
-            float width = 2f * radius * Mathf.Sin(Mathf.Pi / segs) + 0.1f;
-
-            _vineBarrier.AddChild(new MeshInstance3D
+            Mesh = new SphereMesh { Radius = r, Height = r * 2f, IsHemisphere = true, RadialSegments = 32, Rings = 12 },
+            Position = center,
+            MaterialOverride = new StandardMaterial3D
             {
-                Mesh = new BoxMesh { Size = new Vector3(width, wallH, 0.12f) },
-                Position = p,
-                RotationDegrees = new Vector3(0, -i * (360f / segs), 0),
-                MaterialOverride = field,
-            });
-            var body = new StaticBody3D { CollisionLayer = 1, CollisionMask = 0 };
-            body.AddChild(new CollisionShape3D
-            {
-                Shape = new BoxShape3D { Size = new Vector3(width, wallH, 0.4f) },
-                Position = p,
-                RotationDegrees = new Vector3(0, -i * (360f / segs), 0),
-            });
-            _vineBarrier.AddChild(body);
-        }
+                AlbedoColor = new Color(0.4f, 0.7f, 1f, 0.20f),
+                Emission = new Color(0.4f, 0.7f, 1f),
+                EmissionEnabled = true,
+                EmissionEnergyMultiplier = 0.5f,
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+            },
+        });
+
+        // A spherical collider blocks the player from entering the dome.
+        var body = new StaticBody3D { CollisionLayer = 1, CollisionMask = 0 };
+        body.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = r - 0.2f }, Position = center });
+        _vineBarrier.AddChild(body);
 
         // Look target for the prompt.
         var look = new StaticBody3D { CollisionLayer = 2, CollisionMask = 0 };
-        look.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(2f, wallH, 0.6f) }, Position = center + new Vector3(0, wallH * 0.5f, radius) });
+        look.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(2.5f, 3f, 0.6f) }, Position = center + new Vector3(0, 1.6f, r) });
         look.SetMeta("kind", "barrier");
         _vineBarrier.AddChild(look);
 
         _vineBarrier.AddChild(new Label3D
         {
-            Text = $"🔮 Barrier — reach {Num.Fmt(VineBarrierCost)} 🪙 to enter",
-            Position = center + new Vector3(0, wallH + 0.6f, radius),
+            Text = $"🔮 Dome — reach {Num.Fmt(VineBarrierCost)} 🪙 to enter",
+            Position = center + new Vector3(0, r + 0.8f, 0),
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
             FontSize = 64, PixelSize = 0.006f, OutlineSize = 18,
             Modulate = new Color("9fd8ff"), OutlineModulate = new Color(0, 0, 0, 0.85f),
