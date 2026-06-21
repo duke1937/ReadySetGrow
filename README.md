@@ -1,5 +1,7 @@
 # 🌱 ReadySetGrow
 
+### 🎮 Created by Jack, age 11
+
 A 3D, first-person *grow-a-garden* game built in **C# / Godot 4.7 (.NET)**.
 
 Walk around a fenced farm, open the gate, plant seeds on open dirt fields, watch
@@ -82,3 +84,10 @@ scripts/
 ```
 
 The original 2D version is still here (`Main.tscn`) if you set it as the main scene.
+
+## Credits
+
+**Created by Jack — age 11.** 🌱🎮
+
+Designed and directed by Jack: the idea, the seeds and rarities, the Magical Tree,
+the Hidden Grove and Centurnial pack, the weather events, and how it all plays.
