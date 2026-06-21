@@ -62,9 +62,13 @@ public sealed class PlotState
     public double Payout =>
         Seed is null ? 0 : System.Math.Max(1.0, Seed.BaseValue * MutMultiplier * Size);
 
+    /// <summary>Add a mutation — up to 3 *different* ones per crop (no duplicates).</summary>
     public void AddMutation(Mutation m)
     {
-        if (!m.IsNormal) Mutations.Add(m);
+        if (m.IsNormal || Mutations.Count >= 3) return;
+        foreach (Mutation e in Mutations)
+            if (e.Name == m.Name) return;   // already has this one
+        Mutations.Add(m);
     }
 
     /// <summary>e.g. "Gold×2 Shocked" — distinct mutation names with counts.</summary>

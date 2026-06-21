@@ -68,12 +68,16 @@ public partial class Game3D : Node3D
     private Vector3 _vineTop;
     private Vector3 _vineBase;
 
-    // --- mystery pack (gacha for the 3 best fruits) ---
+    // --- mystery pack (a free gift that appears at 1 Oc, openable 3 times) ---
     private readonly HashSet<int> _packWon = new();   // global seed indices won from the pack
+    private int _giftsLeft = 3;
+    private bool _packGone;
+    private Node3D? _packStall;
 
     // --- pets (shop unlocks at 100 Qa) ---
     private bool _petsUnlocked;
     private readonly HashSet<string> _ownedPets = new();
+    private readonly List<Pet3D> _petNodes = new();
     private double _yieldMult = 1.0;   // sell-value multiplier from owned pets
     private double _growthMult = 1.0;  // growth-speed multiplier from owned pets
     private VBoxContainer _petsList = null!;
@@ -261,6 +265,7 @@ public partial class Game3D : Node3D
         RebuildSeedList();
         _selected = Mathf.Clamp(_selected, 0, _activeSeeds.Count - 1);
         RecomputePetBonuses();
+        SpawnOwnedPets();
         SetTreeGlow(_treeUnlocked);
         SetGroveGlow(_groveUnlocked);
         SetUniGlow(_uniUnlocked);
@@ -301,6 +306,12 @@ public partial class Game3D : Node3D
             }
             if (!_uniUnlocked && _player.GlobalPosition.DistanceTo(_vineTop) < 4f)
                 UnlockUni();
+            if (_packStall is null && !_packGone && _giftsLeft > 0 && _coins >= Catalog.PackCost)
+            {
+                BuildPackStall();
+                _sfx.Play("unlock", -4f);
+                ShowToast($"🎁 Here's a gift! Open the present by the gate ({_giftsLeft} left)", new Color("ffd0ff"));
+            }
             UpdateTarget();
 
             if (_auto && !_quizOpen)
@@ -316,6 +327,9 @@ public partial class Game3D : Node3D
 
         foreach (Plot3D p in _plots)
             p.Refresh(dt);
+
+        foreach (Pet3D pet in _petNodes)
+            pet.Home = _player.GlobalPosition;
 
         if (_restartArmed > 0)
         {
@@ -533,7 +547,7 @@ public partial class Game3D : Node3D
                 SetPrompt($"🔮 Vine barrier — reach {Num.Fmt(VineBarrierCost)} 🪙 to enter (you have {Num.Fmt(_coins)})", new Color("9fd8ff"));
                 return;
             case "pack":
-                SetPrompt($"🎁 [E] Spin the Mystery Pack — win a top fruit ({Num.Fmt(Catalog.PackCost)} 🪙)", new Color("ffd0ff"));
+                SetPrompt($"🎁 [E] Open your gift — win a top fruit! ({_giftsLeft} left)", new Color("ffd0ff"));
                 return;
             case "plot" when _targeted is not null:
             {
@@ -685,15 +699,14 @@ public partial class Game3D : Node3D
     {
         if (_quizOpen)
             return;
-        if (_coins < Catalog.PackCost)
+        if (_giftsLeft <= 0)
         {
             _sfx.Play("error");
-            ShowToast($"Need {Num.Fmt(Catalog.PackCost)} 🪙 to open the Mystery Pack", new Color("ff8a7a"));
+            ShowToast("The gift is all used up!", new Color("ff8a7a"));
             return;
         }
 
-        _coins -= Catalog.PackCost;
-        _sfx.Play("select");
+        _sfx.Play("select");   // a free gift — no coin cost
 
         bool wasWalking = _walkMode;
         Input.MouseMode = Input.MouseModeEnum.Visible;
@@ -722,6 +735,14 @@ public partial class Game3D : Node3D
         PopulateShop();
         _sfx.Play("unlock", -3f);
         ShowToast($"🎁 You won {Catalog.PackSeeds[packLocalIndex].Name}! Go plant it!", new Color("ffd0ff"));
+
+        _giftsLeft--;
+        if (_giftsLeft <= 0)
+        {
+            _packGone = true;
+            if (_packStall is not null) { _packStall.QueueFree(); _packStall = null; }
+            ShowToast("🎁 That was the last gift — the present is gone now.", new Color("ffd0ff"));
+        }
     }
 
     private void UnlockUni()
@@ -792,6 +813,32 @@ public partial class Game3D : Node3D
         _growthMult = 1.0 + speed;
     }
 
+    private void SpawnPet(Catalog.Pet pet)
+    {
+        var node = new Pet3D();
+        AddChild(node);
+        float a = GD.Randf() * Mathf.Tau;
+        Vector3 start = _player.GlobalPosition + new Vector3(Mathf.Cos(a) * 2f, 0, Mathf.Sin(a) * 2f);
+        start.Y = 0;
+        node.Setup(RarityColorOf(pet.Tier), pet.Name, start, pet.Kind == "speed" ? 2.4f : 1.6f);
+        _petNodes.Add(node);
+    }
+
+    private void SpawnOwnedPets()
+    {
+        foreach (string name in _ownedPets)
+        {
+            Catalog.Pet? p = Catalog.PetByName(name);
+            if (p is not null) SpawnPet(p);
+        }
+    }
+
+    private void RemoveAllPets()
+    {
+        foreach (Pet3D p in _petNodes) p.QueueFree();
+        _petNodes.Clear();
+    }
+
     private void BuyPet(Catalog.Pet pet)
     {
         if (_ownedPets.Contains(pet.Name))
@@ -805,6 +852,7 @@ public partial class Game3D : Node3D
         _coins -= pet.Cost;
         _ownedPets.Add(pet.Name);
         RecomputePetBonuses();
+        SpawnPet(pet);
         _sfx.Play("unlock", -6f);
         string eff = pet.Kind == "yield" ? $"+{pet.Percent * 100:0}% sell value" : $"+{pet.Percent * 100:0}% growth speed";
         ShowToast($"🐾 Adopted {pet.Name}! {eff}", new Color("ffd9a8"));
@@ -1135,31 +1183,33 @@ public partial class Game3D : Node3D
         BuildHiddenGrove();
         BuildPetsShop();
         BuildVine();
-        BuildPackStall();
         BuildWeather();
         BuildPlayer();
+        // The Mystery Pack present is not built here — it appears once you reach 1 Oc.
     }
 
-    /// <summary>A gift box just outside the gate — interact to spin the Mystery Pack.</summary>
+    /// <summary>A gift box just outside the gate — interact to spin the Mystery Pack.
+    /// Built only once you've reached 1 Oc, and removed after the gifts run out.</summary>
     private void BuildPackStall()
     {
         var pos = new Vector3(2.8f, 0, GateZ + 4.2f);
+        _packStall = new Node3D();
+        AddChild(_packStall);
 
-        AddChild(new MeshInstance3D
+        _packStall.AddChild(new MeshInstance3D
         {
             Mesh = new BoxMesh { Size = new Vector3(1.1f, 1.1f, 1.1f) },
             Position = pos + new Vector3(0, 0.55f, 0),
             MaterialOverride = Mat(new Color("d14db0"), 0.6f),
         });
-        // ribbon (two crossing bands) + bow
         var ribbon = Mat(new Color("ffe066"), 0.5f);
-        AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(1.16f, 1.16f, 0.18f) }, Position = pos + new Vector3(0, 0.55f, 0), MaterialOverride = ribbon });
-        AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(0.18f, 1.16f, 1.16f) }, Position = pos + new Vector3(0, 0.55f, 0), MaterialOverride = ribbon });
-        AddChild(new MeshInstance3D { Mesh = new SphereMesh { Radius = 0.16f, Height = 0.32f }, Position = pos + new Vector3(0, 1.18f, 0), MaterialOverride = ribbon });
+        _packStall.AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(1.16f, 1.16f, 0.18f) }, Position = pos + new Vector3(0, 0.55f, 0), MaterialOverride = ribbon });
+        _packStall.AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(0.18f, 1.16f, 1.16f) }, Position = pos + new Vector3(0, 0.55f, 0), MaterialOverride = ribbon });
+        _packStall.AddChild(new MeshInstance3D { Mesh = new SphereMesh { Radius = 0.16f, Height = 0.32f }, Position = pos + new Vector3(0, 1.18f, 0), MaterialOverride = ribbon });
 
-        AddChild(new Label3D
+        _packStall.AddChild(new Label3D
         {
-            Text = "🎁 Mystery Pack",
+            Text = "🎁 Here's a gift!",
             Position = pos + new Vector3(0, 1.7f, 0),
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
             FontSize = 72, PixelSize = 0.006f, OutlineSize = 18,
@@ -1168,12 +1218,12 @@ public partial class Game3D : Node3D
 
         var solid = new StaticBody3D { CollisionLayer = 1, CollisionMask = 0 };
         solid.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(1.1f, 1.1f, 1.1f) }, Position = pos + new Vector3(0, 0.55f, 0) });
-        AddChild(solid);
+        _packStall.AddChild(solid);
 
         var look = new StaticBody3D { CollisionLayer = 2, CollisionMask = 0 };
         look.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(1.5f, 1.6f, 1.5f) }, Position = pos + new Vector3(0, 0.8f, 0) });
         look.SetMeta("kind", "pack");
-        AddChild(look);
+        _packStall.AddChild(look);
     }
 
     /// <summary>A grape vine of 15 giant leaf platforms spiralling up to the Uni-Grape.</summary>
@@ -1847,7 +1897,9 @@ public partial class Game3D : Node3D
             return;
         }
 
-        // Fully grown: keep rolling — mutations can still appear and stack with no limit.
+        // Fully grown: keep rolling — crops can still gain mutations (up to 3 different ones).
+        if (st.Mutations.Count >= 3)
+            return;
         st.MutTimer += dt;
         if (st.MutTimer >= MutInterval)
         {
@@ -1993,7 +2045,11 @@ public partial class Game3D : Node3D
         _vineBarrierDown = false;
         if (_vineBarrier is null) BuildVineBarrier(_vineBase);
         _ownedPets.Clear();
+        RemoveAllPets();
         _packWon.Clear();
+        _giftsLeft = 3;
+        _packGone = false;
+        if (_packStall is not null) { _packStall.QueueFree(); _packStall = null; }
         RecomputePetBonuses();
         _selected = 0;
         _auto = false;
@@ -2623,6 +2679,8 @@ public partial class Game3D : Node3D
             ["petsUnlocked"] = _petsUnlocked,
             ["ownedPets"] = pets,
             ["packWon"] = packWon,
+            ["giftsLeft"] = _giftsLeft,
+            ["packGone"] = _packGone,
             ["selected"] = _selected,
             ["plots"] = plots,
             ["time"] = Time.GetUnixTimeFromSystem(),
@@ -2677,6 +2735,10 @@ public partial class Game3D : Node3D
             foreach (Variant wv in data["packWon"].AsGodotArray())
                 _packWon.Add((int)wv);
         }
+        if (data.ContainsKey("giftsLeft"))
+            _giftsLeft = (int)data["giftsLeft"];
+        if (data.ContainsKey("packGone"))
+            _packGone = (bool)data["packGone"];
         if (data.ContainsKey("selected"))
             _selected = (int)data["selected"]; // clamped in _Ready once the seed list is built
 

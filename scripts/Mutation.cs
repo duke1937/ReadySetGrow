@@ -22,7 +22,7 @@ public sealed class Mutation
     /// <summary>Storm-only mega-mutation — only rolls while a Storm event is active.</summary>
     public static readonly Mutation Shocked = new()
     {
-        Name = "Shocked", Multiplier = 48f, Chance = 0f, Tint = new Color("f6ff3a")
+        Name = "Shocked", Multiplier = 8f, Chance = 0f, Tint = new Color("f6ff3a")
     };
 
     /// <summary>A huge crop — one of the guaranteed mutations on "Strange" grove crops.</summary>
@@ -39,14 +39,14 @@ public sealed class Mutation
 
     // Event-only mutations (rolled while the matching weather event is active).
     public static readonly Mutation SunTouch = new()  { Name = "Sun-touch", Multiplier = 30f, Chance = 0f, Tint = new Color("ffcf3a") };
-    public static readonly Mutation Weird = new()     { Name = "Strange",   Multiplier = 24f, Chance = 0f, Tint = new Color("8a8a3a") };
+    public static readonly Mutation Weird = new()     { Name = "Strange",   Multiplier = 6f,  Chance = 0f, Tint = new Color("8a8a3a") };
     public static readonly Mutation Big = new()       { Name = "Big",       Multiplier = 5f,  Chance = 0f, Tint = new Color("9aff9a") };
     public static readonly Mutation Gigantic = new()  { Name = "Gigantic",  Multiplier = 30f, Chance = 0f, Tint = new Color("5aff5a") };
 
     /// <summary>Rarest first — Roll() returns the first one that hits.</summary>
     public static readonly List<Mutation> Table = new()
     {
-        new() { Name = "Rainbow", Multiplier = 25f, Chance = 0.005f, Tint = new Color("ff66cc") },
+        new() { Name = "Rainbow", Multiplier = 4f,  Chance = 0.005f, Tint = new Color("ff66cc") },
         new() { Name = "Frozen",  Multiplier = 10f, Chance = 0.015f, Tint = new Color("66ccff") },
         new() { Name = "Gold",    Multiplier = 5f,  Chance = 0.04f,  Tint = new Color("ffd24a") },
         new() { Name = "Wet",     Multiplier = 1.5f,Chance = 0.10f,  Tint = new Color("4a9fff") },
