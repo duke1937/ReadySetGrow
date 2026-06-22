@@ -94,6 +94,12 @@ public static class Catalog
             Name = "Candy Cane", Rarity = "Mystic", Cost = 4e27, BaseValue = 8e29,
             GrowSeconds = 120f, Color = new Color("ff4d6a"), Shape = PlantShape.CandyCane, RainbowMultiplier = 120,
         },
+        new SeedType
+        {
+            // A giant tree: 3x3 footprint, ~3x taller and 3x slower than Bendboo (90s -> 270s).
+            Name = "Worldtree", Rarity = "Mystic", Cost = 1e28, BaseValue = 3e30,
+            GrowSeconds = 270f, Color = new Color("5ac46a"), Shape = PlantShape.BigTree, Footprint = 9,
+        },
     };
 
     /// <summary>Find a seed in any catalog.</summary>
@@ -368,6 +374,8 @@ public static class Catalog
             list.Add(new Pet { Name = d.YName, Tier = d.Tier, Kind = "yield", Percent = d.Yield, Cost = d.Cost });
             list.Add(new Pet { Name = d.SName, Tier = d.Tier, Kind = "speed", Percent = d.Speed, Cost = d.Cost * 1.1 });
         }
+        // The Admin Monkey: roams the farm granting the Admin mutation (10x) to ripe fruit.
+        list.Add(new Pet { Name = "Admin Monkey", Tier = "Admin", Kind = "admin", Percent = 0, Cost = 1e22 });
         return list;
     }
 

@@ -53,6 +53,7 @@ public static class PlantVisual
             case PlantShape.BurningBud: BurningBud(root, c, glow); magic = true; break;
             case PlantShape.SugarApple: SugarApple(root, c, glow); magic = true; break;
             case PlantShape.CandyCane: CandyCane(root, c, glow); magic = true; break;
+            case PlantShape.BigTree: BigTree(root, c, glow); break;
             default: Bush(root, c, glow); break;
         }
 
@@ -299,6 +300,22 @@ public static class PlantVisual
         Add(p, Cyl(0.09f, 0.18f), new Vector3(0.08f, baseY + 0.02f, 0), red, rot: new Vector3(0, 0, 40));
         Add(p, Cyl(0.09f, 0.18f), new Vector3(0.22f, baseY + 0.06f, 0), white, rot: new Vector3(0, 0, 75));
         Add(p, Cyl(0.09f, 0.16f), new Vector3(0.34f, baseY - 0.02f, 0), red, rot: new Vector3(0, 0, 110));
+    }
+
+    private static void BigTree(Node3D p, Color c, List<StandardMaterial3D> g)
+    {
+        Add(p, Cyl(0.2f, 2.2f), new Vector3(0, 1.1f, 0), M(Trunk, 0.9f));      // thick tall trunk
+        var leaf = M(new Color("357a39"), 0.85f);
+        Add(p, Sph(0.95f), new Vector3(0, 2.5f, 0), leaf, new Vector3(1.2f, 1f, 1.2f));
+        Add(p, Sph(0.7f), new Vector3(0.55f, 2.15f, 0.25f), leaf);
+        Add(p, Sph(0.7f), new Vector3(-0.55f, 2.25f, -0.2f), leaf);
+        Add(p, Sph(0.6f), new Vector3(0.1f, 3.05f, 0.1f), leaf);
+        var fm = Fruit(c, g, 0.45f);
+        for (int i = 0; i < 7; i++)
+        {
+            float a = Mathf.DegToRad(i * (360f / 7f));
+            Add(p, Sph(0.17f), new Vector3(Mathf.Cos(a) * 0.75f, 2.2f + (i % 2) * 0.35f, Mathf.Sin(a) * 0.75f), fm);
+        }
     }
 
     // ---- helpers ----------------------------------------------------------

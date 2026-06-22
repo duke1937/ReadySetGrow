@@ -43,6 +43,9 @@ public sealed class Mutation
     public static readonly Mutation Big = new()       { Name = "Big",       Multiplier = 5f,  Chance = 0f, Tint = new Color("9aff9a") };
     public static readonly Mutation Gigantic = new()  { Name = "Gigantic",  Multiplier = 30f, Chance = 0f, Tint = new Color("5aff5a") };
 
+    /// <summary>Granted by the Admin Monkey pet as it roams the farm.</summary>
+    public static readonly Mutation Admin = new()     { Name = "Admin",     Multiplier = 10f, Chance = 0f, Tint = new Color("ff2d55") };
+
     /// <summary>Rarest first — Roll() returns the first one that hits.</summary>
     public static readonly List<Mutation> Table = new()
     {
@@ -99,6 +102,7 @@ public sealed class Mutation
         if (name == Weird.Name) return Weird;
         if (name == Big.Name) return Big;
         if (name == Gigantic.Name) return Gigantic;
+        if (name == Admin.Name) return Admin;
         foreach (Mutation m in Table)
             if (m.Name == name) return m;
         return Normal;

@@ -24,6 +24,7 @@ public enum PlantShape
     BurningBud, // a very long flower that leans left
     SugarApple, // a tall tree of long green apples
     CandyCane,  // a striped candy-cane hook
+    BigTree,    // an enormous tree (3x3 footprint)
 }
 
 /// <summary>A kind of plant the player can buy and grow.</summary>

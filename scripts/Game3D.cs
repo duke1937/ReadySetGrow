@@ -80,6 +80,8 @@ public partial class Game3D : Node3D
     private readonly List<Pet3D> _petNodes = new();
     private double _yieldMult = 1.0;   // sell-value multiplier from owned pets
     private double _growthMult = 1.0;  // growth-speed multiplier from owned pets
+    private bool _hasAdminPet;         // owns the Admin Monkey (roams granting Admin mutation)
+    private double _adminTimer;
     private VBoxContainer _petsList = null!;
     private PanelContainer _petsPanel = null!;
     private readonly List<PetRow> _petRows = new();
@@ -203,24 +205,41 @@ public partial class Game3D : Node3D
     private static int[] MultiBlock(int idx, int footprint)
     {
         var (field, col, row) = PlotCoords(idx);
-        int mcol = Mathf.Min(col, Catalog.FieldCols - 2);
+
+        if (footprint >= 9)
+        {
+            int mcol = Mathf.Min(col, Catalog.FieldCols - 3);
+            int mrow = Mathf.Min(row, Catalog.FieldRows - 3);
+            var list = new List<int>(9);
+            for (int r = 0; r < 3; r++)
+                for (int cc = 0; cc < 3; cc++)
+                    list.Add(PlotIndex(field, mcol + cc, mrow + r));
+            return list.ToArray();   // master = list[0] (top-left)
+        }
+
+        int c2 = Mathf.Min(col, Catalog.FieldCols - 2);
         if (footprint >= 4)
         {
             int mrow = Mathf.Min(row, Catalog.FieldRows - 2);
             return new[]
             {
-                PlotIndex(field, mcol, mrow),
-                PlotIndex(field, mcol + 1, mrow),
-                PlotIndex(field, mcol, mrow + 1),
-                PlotIndex(field, mcol + 1, mrow + 1),
+                PlotIndex(field, c2, mrow),
+                PlotIndex(field, c2 + 1, mrow),
+                PlotIndex(field, c2, mrow + 1),
+                PlotIndex(field, c2 + 1, mrow + 1),
             };
         }
-        return new[] { PlotIndex(field, mcol, row), PlotIndex(field, mcol + 1, row) };  // 1x2 pair
+        return new[] { PlotIndex(field, c2, row), PlotIndex(field, c2 + 1, row) };  // 1x2 pair
     }
 
     private void SetupMulti(int masterIdx, int footprint)
     {
-        if (footprint >= 4)
+        if (footprint >= 9)
+        {
+            _plots[masterIdx].PlantOffset = new Vector3(SpotSpacing, 0, SpotSpacing);  // centre of the 3x3
+            _plots[masterIdx].ExtraScale = 2.8f;
+        }
+        else if (footprint >= 4)
         {
             _plots[masterIdx].PlantOffset = new Vector3(SpotSpacing * 0.5f, 0, SpotSpacing * 0.5f);
             _plots[masterIdx].ExtraScale = 1.9f;
@@ -274,22 +293,20 @@ public partial class Game3D : Node3D
         _petsPanel.Visible = _petsUnlocked;
         if (_petsUnlocked) PopulatePets();
         PopulateShop();
-        SetWalkMode(true);
-        ShowToast("🌱 Welcome to ReadySetGrow! Open the gate, walk in, and press E on the dirt to plant.", new Color("d9f7a6"));
+        NetStart();   // show the Solo / Host / Join lobby
     }
 
     public override void _Process(double delta)
     {
         var dt = (float)delta;
 
-        // The Main Menu pauses the simulation.
-        if (!_menuOpen)
+        // Only the host/solo player runs the simulation; the Main Menu pauses it.
+        if (NetSimActive && !_menuOpen)
         {
             float growDt = dt * (float)_growthMult;
             foreach (PlotState st in _states)
                 Grow(st, growDt, _activeEvent);
 
-            AnimateGate(dt);
             UpdateEvents(delta);
             UpdateWeather(dt, delta);
             if (!_treeUnlocked && _coins >= Catalog.TreeUnlockCost)
@@ -312,7 +329,11 @@ public partial class Game3D : Node3D
                 _sfx.Play("unlock", -4f);
                 ShowToast($"🎁 Here's a gift! Open the present by the gate ({_giftsLeft} left)", new Color("ffd0ff"));
             }
-            UpdateTarget();
+            if (_hasAdminPet)
+            {
+                _adminTimer += delta;
+                if (_adminTimer >= 6.0) { _adminTimer = 0; GiveAdminMutation(); }
+            }
 
             if (_auto && !_quizOpen)
             {
@@ -324,6 +345,15 @@ public partial class Game3D : Node3D
                 }
             }
         }
+
+        // Runs for host, client and solo (so clients still animate, target and sync).
+        if (_net != NetMode.Lobby)
+        {
+            AnimateGate(dt);
+            UpdateTarget();
+            ShowEventBanner();
+        }
+        NetProcess(delta);
 
         foreach (Plot3D p in _plots)
             p.Refresh(dt);
@@ -360,7 +390,7 @@ public partial class Game3D : Node3D
         if (_saveTimer >= AutosaveSeconds)
         {
             _saveTimer = 0;
-            SaveGame();
+            if (!IsClient) SaveGame();   // clients don't own the world, so they don't save it
         }
     }
 
@@ -375,7 +405,7 @@ public partial class Game3D : Node3D
             v.Y = 0;
 
         Vector3 wish = Vector3.Zero;
-        if (_walkMode && !_quizOpen && !_menuOpen)
+        if (_walkMode && !_quizOpen && !_menuOpen && _net != NetMode.Lobby)
         {
             float fwd = (Input.IsPhysicalKeyPressed(Key.W) ? 1f : 0f) - (Input.IsPhysicalKeyPressed(Key.S) ? 1f : 0f);
             float strafe = (Input.IsPhysicalKeyPressed(Key.D) ? 1f : 0f) - (Input.IsPhysicalKeyPressed(Key.A) ? 1f : 0f);
@@ -397,7 +427,7 @@ public partial class Game3D : Node3D
         _player.MoveAndSlide();
     }
 
-    public override void _ExitTree() => SaveGame();
+    public override void _ExitTree() { if (!IsClient) SaveGame(); }
 
     // ---- input ------------------------------------------------------------
 
@@ -598,8 +628,18 @@ public partial class Game3D : Node3D
         }
     }
 
+    /// <summary>True (and shows a note) if a client tries a host-only action.</summary>
+    private bool ClientBlocked()
+    {
+        if (!IsClient) return false;
+        _sfx.Play("error");
+        ShowToast("Only the host can do that right now", new Color("ff8a7a"));
+        return true;
+    }
+
     private void UseTree()
     {
+        if (ClientBlocked()) return;
         if (_treeUnlocked)
         {
             ShowToast("🌳 The Magical Tree's seeds are in the shop — hold Shift to browse.", new Color("d8b8ff"));
@@ -639,6 +679,7 @@ public partial class Game3D : Node3D
 
     private void UseGrove()
     {
+        if (ClientBlocked()) return;
         if (_groveUnlocked)
             ShowToast("🌌 The Hidden Grove's seeds are in the shop — hold Shift to browse.", new Color("aef0e0"));
         else if (_coins >= Catalog.GroveUnlockCost)
@@ -672,6 +713,7 @@ public partial class Game3D : Node3D
 
     private void UseBarrier()
     {
+        if (ClientBlocked()) return;
         if (_coins >= VineBarrierCost)
         {
             DropBarrier();
@@ -687,6 +729,7 @@ public partial class Game3D : Node3D
 
     private void UseUni()
     {
+        if (ClientBlocked()) return;
         if (!_uniUnlocked)
             UnlockUni();
         else
@@ -697,6 +740,7 @@ public partial class Game3D : Node3D
 
     private void OpenPack()
     {
+        if (ClientBlocked()) return;
         if (_quizOpen)
             return;
         if (_giftsLeft <= 0)
@@ -770,6 +814,7 @@ public partial class Game3D : Node3D
 
     private void UsePetsShop()
     {
+        if (ClientBlocked()) return;
         if (_petsUnlocked)
             ShowToast("🐾 Pets are on the left panel — hold Shift to adopt them.", new Color("ffd9a8"));
         else if (_coins >= Catalog.PetsUnlockCost)
@@ -802,12 +847,14 @@ public partial class Game3D : Node3D
     private void RecomputePetBonuses()
     {
         double yield = 0, speed = 0;
+        _hasAdminPet = false;
         foreach (string name in _ownedPets)
         {
             Catalog.Pet? p = Catalog.PetByName(name);
             if (p is null) continue;
             if (p.Kind == "yield") yield += p.Percent;
-            else speed += p.Percent;
+            else if (p.Kind == "speed") speed += p.Percent;
+            else if (p.Kind == "admin") _hasAdminPet = true;
         }
         _yieldMult = 1.0 + yield;
         _growthMult = 1.0 + speed;
@@ -820,7 +867,9 @@ public partial class Game3D : Node3D
         float a = GD.Randf() * Mathf.Tau;
         Vector3 start = _player.GlobalPosition + new Vector3(Mathf.Cos(a) * 2f, 0, Mathf.Sin(a) * 2f);
         start.Y = 0;
-        node.Setup(RarityColorOf(pet.Tier), pet.Name, start, pet.Kind == "speed" ? 2.4f : 1.6f);
+        bool monkey = pet.Kind == "admin";
+        float speed = monkey ? 3.6f : pet.Kind == "speed" ? 2.4f : 1.6f;
+        node.Setup(RarityColorOf(pet.Tier), pet.Name, start, speed, monkey);
         _petNodes.Add(node);
     }
 
@@ -839,8 +888,31 @@ public partial class Game3D : Node3D
         _petNodes.Clear();
     }
 
+    /// <summary>The Admin Monkey grants the Admin mutation (10x) to a random ripe crop.</summary>
+    private void GiveAdminMutation()
+    {
+        var ready = new List<int>();
+        for (int i = 0; i < _states.Length; i++)
+        {
+            PlotState st = _states[i];
+            if (!st.IsReady || st.Mutations.Count >= 3)
+                continue;
+            bool hasAdmin = false;
+            foreach (Mutation m in st.Mutations)
+                if (m.Name == "Admin") { hasAdmin = true; break; }
+            if (!hasAdmin) ready.Add(i);
+        }
+        if (ready.Count == 0)
+            return;
+
+        int pick = ready[(int)(GD.Randi() % (uint)ready.Count)];
+        _states[pick].AddMutation(Mutation.Admin);
+        _plots[pick].Refresh(0f);
+    }
+
     private void BuyPet(Catalog.Pet pet)
     {
+        if (ClientBlocked()) return;
         if (_ownedPets.Contains(pet.Name))
             return;
         if (_coins < pet.Cost)
@@ -854,15 +926,24 @@ public partial class Game3D : Node3D
         RecomputePetBonuses();
         SpawnPet(pet);
         _sfx.Play("unlock", -6f);
-        string eff = pet.Kind == "yield" ? $"+{pet.Percent * 100:0}% sell value" : $"+{pet.Percent * 100:0}% growth speed";
+        string eff = pet.Kind == "yield" ? $"+{pet.Percent * 100:0}% sell value"
+                   : pet.Kind == "speed" ? $"+{pet.Percent * 100:0}% growth speed"
+                   : "roams granting the Admin mutation (10×)";
         ShowToast($"🐾 Adopted {pet.Name}! {eff}", new Color("ffd9a8"));
     }
 
     private void UsePlot(Plot3D plot)
     {
+        if (IsClient) { RpcId(1, "ReqUsePlot", plot.Index, _selected); return; }
+        DoUsePlot(plot.Index, _selected);
+    }
+
+    private void DoUsePlot(int plotIndex, int seedIndex)
+    {
         // A spot covered by a multi-tile plant acts on its master.
-        if (plot.State.SlaveOf >= 0)
-            plot = _plots[plot.State.SlaveOf];
+        if (_plots[plotIndex].State.SlaveOf >= 0)
+            plotIndex = _plots[plotIndex].State.SlaveOf;
+        Plot3D plot = _plots[plotIndex];
         PlotState st = plot.State;
 
         if (st.IsReady)
@@ -878,11 +959,11 @@ public partial class Game3D : Node3D
 
         if (st.IsEmpty)
         {
-            SeedType seed = Seeds[_selected];
-            if (!IndexUnlocked(_selected))
+            SeedType seed = Seeds[seedIndex];
+            if (!IndexUnlocked(seedIndex))
             {
                 _sfx.Play("error");
-                ShowToast($"🔒 {seed.Name} is locked — {LockMessage(_selected)}", new Color("ff8a7a"));
+                ShowToast($"🔒 {seed.Name} is locked — {LockMessage(seedIndex)}", new Color("ff8a7a"));
                 return;
             }
             if (seed.Footprint >= 2)
@@ -912,7 +993,7 @@ public partial class Game3D : Node3D
     private void PlantMulti(int clickedIdx, SeedType seed)
     {
         int[] block = MultiBlock(clickedIdx, seed.Footprint);
-        string need = seed.Footprint >= 4 ? "a clear 2×2 patch" : "2 clear spaces side by side";
+        string need = seed.Footprint >= 9 ? "a clear 3×3 patch" : seed.Footprint >= 4 ? "a clear 2×2 patch" : "2 clear spaces side by side";
         foreach (int bi in block)
         {
             if (!_states[bi].IsEmpty || _states[bi].SlaveOf >= 0)
@@ -949,6 +1030,12 @@ public partial class Game3D : Node3D
 
     private void SellBasket()
     {
+        if (IsClient) { RpcId(1, "ReqSell"); return; }
+        DoSell();
+    }
+
+    private void DoSell()
+    {
         if (_basketCount == 0)
         {
             _sfx.Play("error");
@@ -965,6 +1052,12 @@ public partial class Game3D : Node3D
     }
 
     private void ToggleGate()
+    {
+        if (IsClient) { RpcId(1, "ReqGate"); return; }
+        DoToggleGate();
+    }
+
+    private void DoToggleGate()
     {
         _gateOpen = !_gateOpen;
         _gateTargetAngle = _gateOpen ? -Mathf.Pi / 2f : 0f;
@@ -997,7 +1090,11 @@ public partial class Game3D : Node3D
             if (_eventRemaining <= 0)
                 EndEvent();
         }
+    }
 
+    /// <summary>Show the weather banner from the current event state (host and clients).</summary>
+    private void ShowEventBanner()
+    {
         if (_activeEvent.Length == 0)
         {
             _eventBanner.Visible = false;
@@ -1008,10 +1105,10 @@ public partial class Game3D : Node3D
         int s = Mathf.Max(0, Mathf.CeilToInt((float)_eventRemaining));
         (string text, string col) = _activeEvent switch
         {
-            "Storm"   => ($"⛈  STORM  —  crops can turn SHOCKED (48×)!   {s}s", "bcd0ff"),
-            "Rainbow" => ($"🌈  RAINBOW  —  crops often turn Rainbow (25×)!   {s}s", "ffc4f0"),
+            "Storm"   => ($"⛈  STORM  —  crops can turn SHOCKED (8×)!   {s}s", "bcd0ff"),
+            "Rainbow" => ($"🌈  RAINBOW  —  crops often turn Rainbow (4×)!   {s}s", "ffc4f0"),
             "Solar"   => ($"☀  SOLAR FLARE  —  Sun-touch (30×) chance!   {s}s", "ffe08a"),
-            "Strange" => ($"🌀  STRANGE  —  Weird, brown-green (24×)!   {s}s", "c8d08a"),
+            "Strange" => ($"🌀  STRANGE  —  Strange, brown-green (6×)!   {s}s", "c8d08a"),
             "Ground"  => ($"🟫  GROUND SHIFT  —  Big / Gigantic crops!   {s}s", "d8b48a"),
             _ => ("", "ffffff"),
         };
@@ -1910,6 +2007,12 @@ public partial class Game3D : Node3D
 
     private void HarvestAll()
     {
+        if (IsClient) { RpcId(1, "ReqHarvestAll"); return; }
+        DoHarvestAll();
+    }
+
+    private void DoHarvestAll()
+    {
         double total = 0;
         int count = 0;
         foreach (Plot3D p in _plots)
@@ -1986,6 +2089,7 @@ public partial class Game3D : Node3D
 
     private void ToggleAuto()
     {
+        if (ClientBlocked()) return;
         _auto = !_auto;
         UpdateAutoButton();
         ShowToast(_auto ? "Auto-play on — sit back!" : "Auto-play off — your turn 🌱",
@@ -2023,6 +2127,7 @@ public partial class Game3D : Node3D
 
     private void OnRestartPressed()
     {
+        if (ClientBlocked()) return;
         if (_restartArmed <= 0)
         {
             _restartArmed = 4.0;   // require a second click within 4s to confirm
@@ -2090,6 +2195,7 @@ public partial class Game3D : Node3D
 
     private void OnGrowAllPressed()
     {
+        if (ClientBlocked()) return;
         if (_quizOpen)
             return;
 
@@ -2434,7 +2540,7 @@ public partial class Game3D : Node3D
             else
             {
                 string costCol = afford ? "ffe066" : "ff8a7a";
-                string foot = row.Seed.Footprint >= 4 ? "  ·  4 spaces" : row.Seed.Footprint == 2 ? "  ·  2 spaces" : "";
+                string foot = row.Seed.Footprint >= 9 ? "  ·  9 spaces" : row.Seed.Footprint >= 4 ? "  ·  4 spaces" : row.Seed.Footprint == 2 ? "  ·  2 spaces" : "";
                 row.Info.Text =
                     $"[b]{row.Seed.Name}[/b]  [color=#{rc}]{row.Seed.Rarity}[/color]\n" +
                     $"[color=#{costCol}]{Num.Fmt(row.Seed.Cost)}🪙[/color]  " +
@@ -2536,9 +2642,9 @@ public partial class Game3D : Node3D
             row.Btn.Modulate = owned ? new Color(0.8f, 1f, 0.8f) : afford ? Colors.White : new Color(1, 1, 1, 0.5f);
 
             string tc = RarityColorOf(row.Pet.Tier).ToHtml(false);
-            string eff = row.Pet.Kind == "yield"
-                ? $"+{row.Pet.Percent * 100:0}% sell value"
-                : $"+{row.Pet.Percent * 100:0}% growth speed";
+            string eff = row.Pet.Kind == "yield" ? $"+{row.Pet.Percent * 100:0}% sell value"
+                       : row.Pet.Kind == "speed" ? $"+{row.Pet.Percent * 100:0}% growth speed"
+                       : "gives fruit the Admin mutation (10×)";
 
             if (owned)
                 row.Info.Text = $"[b]{row.Pet.Name}[/b]  [color=#{tc}]{row.Pet.Tier}[/color]\n[color=#9be67a]✓ Owned[/color]  ·  {eff}";
@@ -2559,6 +2665,7 @@ public partial class Game3D : Node3D
         "Titan"     => new Color("ff7a1a"),
         "Entity"    => new Color("b14dff"),
         "Eternal"   => new Color("ffe9a8"),
+        "Admin"     => new Color("ff2d55"),
         _            => new Color("c8c8c8"),
     };
 
